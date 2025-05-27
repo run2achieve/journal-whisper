@@ -16,17 +16,17 @@ const GOOGLE_SCRIPT_URL =
 
 const PORT = process.env.PORT || 8090;
 
-// Health check endpoint
-app.get("/", (req, res) => {
+// Health check endpoint — moved to /health so root serves React app
+app.get("/health", (req, res) => {
   res.send(`✅ Proxy server is running on port ${PORT}`);
 });
 
-// Serve React static files
+// Serve React static files from the build folder
 app.use(express.static(path.join(__dirname, "../build")));
 
-// Save entry route
+// Save entry route - forwards data to Google Apps Script
 app.post("/saveEntry", async (req, res) => {
-  console.log("📩 Received entry:", req.body); // Log incoming data
+  console.log("📩 Received entry:", req.body);
 
   try {
     const response = await fetch(GOOGLE_SCRIPT_URL, {
@@ -48,7 +48,7 @@ app.post("/saveEntry", async (req, res) => {
       res.json(data); // Parsed JSON response
     } catch (jsonError) {
       console.warn("⚠️ Response not JSON, returning raw text");
-      res.json({ message: text }); // If not JSON, return as plain text
+      res.json({ message: text }); // Fallback if response is not JSON
     }
   } catch (error) {
     console.error("🚨 Proxy error:", error);
@@ -56,11 +56,12 @@ app.post("/saveEntry", async (req, res) => {
   }
 });
 
-// React Router support: serve index.html for all other GET requests
+// React Router support — serve index.html for all other GET requests
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "../build/index.html"));
 });
 
+// Start server
 app.listen(PORT, () => {
   console.log(`🚀 Proxy server running at http://localhost:${PORT}`);
 });
