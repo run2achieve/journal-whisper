@@ -69,7 +69,7 @@ export default function Journal({ user, onLogout }) {
         setCountdown(0);
         setIsRecording(false);
         setRecordingDuration(0);
-        setSaveMessage(""); // stop showing "Recording in progress..."
+        setSaveMessage("");
 
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
         try {
@@ -89,14 +89,9 @@ export default function Journal({ user, onLogout }) {
           const data = await response.json();
 
           if (data.transcription) {
-            // Put transcription text into textarea entry
             setEntry(data.transcription);
-
-            // Show transcription toast
             setSaveMessage("Transcription received. Please review and save manually.");
             setShowToast(true);
-
-            // NOTE: Removed automatic save to Google Sheets here.
           } else {
             setSaveMessage("No transcription received.");
             setShowToast(true);
@@ -123,8 +118,13 @@ export default function Journal({ user, onLogout }) {
   };
 
   const saveToGoogleSheet = async (timestamp, text, username) => {
+    const SAVE_API_URL =
+      window.location.hostname === "localhost"
+        ? "http://localhost:8090/saveEntry"
+        : "https://journal-whisper.onrender.com/saveEntry";
+
     try {
-      const response = await fetch("http://localhost:8090/saveEntry", {
+      const response = await fetch(SAVE_API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ timestamp, entry: text, user: username }),
@@ -286,7 +286,10 @@ export default function Journal({ user, onLogout }) {
               overflow: "hidden",
               userSelect: "none",
               fontWeight: "600",
-              boxShadow: isRecording && recordingDuration === duration ? "0 0 10px #ff4444" : "none",
+              boxShadow:
+                isRecording && recordingDuration === duration
+                  ? "0 0 10px #ff4444"
+                  : "none",
               transition: "background-color 0.3s ease",
             }}
           >
@@ -309,7 +312,13 @@ export default function Journal({ user, onLogout }) {
       </div>
 
       {/* Current timestamp display */}
-      <div style={{ textAlign: "center", marginBottom: "1rem", fontSize: "1.1rem" }}>
+      <div
+        style={{
+          textAlign: "center",
+          marginBottom: "1rem",
+          fontSize: "1.1rem",
+        }}
+      >
         <span>{currentTimestamp}</span>{" "}
         <button
           onClick={handleRefreshTime}
