@@ -1,7 +1,8 @@
 const express = require("express");
 const cors = require("cors");
+const path = require("path");
 
-// Use node-fetch in Node.js (v18- compatible)
+// Use node-fetch in Node.js (v18+ compatible)
 const fetch = (...args) =>
   import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
@@ -15,10 +16,13 @@ const GOOGLE_SCRIPT_URL =
 
 const PORT = process.env.PORT || 8090;
 
-// Health check
+// Health check endpoint
 app.get("/", (req, res) => {
   res.send(`✅ Proxy server is running on port ${PORT}`);
 });
+
+// Serve React static files
+app.use(express.static(path.join(__dirname, "../build")));
 
 // Save entry route
 app.post("/saveEntry", async (req, res) => {
@@ -50,6 +54,11 @@ app.post("/saveEntry", async (req, res) => {
     console.error("🚨 Proxy error:", error);
     res.status(500).json({ error: "Failed to save entry via proxy" });
   }
+});
+
+// React Router support: serve index.html for all other GET requests
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "../build/index.html"));
 });
 
 app.listen(PORT, () => {
