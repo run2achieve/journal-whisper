@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import logo from "./assets/logo.png"; // Adjust path as needed
 
-const PROXY_API_URL = "http://localhost:8090/saveEntry";
+const PROXY_API_URL =
+  window.location.hostname === "localhost"
+    ? "http://localhost:8090/saveEntry"
+    : "https://journal-whisper.onrender.com/saveEntry";
 
 export default function Journal({ user, onLogout }) {
   const [entry, setEntry] = useState("");
