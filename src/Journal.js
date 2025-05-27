@@ -3,8 +3,8 @@ import logo from "./assets/logo.png"; // Adjust path as needed
 
 const PROXY_API_URL =
   window.location.hostname === "localhost"
-    ? "http://localhost:8090/saveEntry"
-    : "https://journal-whisper.onrender.com/saveEntry";
+    ? "http://localhost:8090/transcribeAudio"
+    : "https://journal-whisper.onrender.com/transcribeAudio";
 
 export default function Journal({ user, onLogout }) {
   const [entry, setEntry] = useState("");

@@ -4,7 +4,11 @@ const path = require("path");
 const multer = require("multer");
 const fetch = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
 const FormData = require("form-data");
-require("dotenv").config({ path: "./apikey.env" });
+
+// Load environment variables only in development
+if (process.env.NODE_ENV !== "production") {
+  require("dotenv").config();
+}
 
 const app = express();
 const PORT = process.env.PORT || 8090;
@@ -13,27 +17,36 @@ const PORT = process.env.PORT || 8090;
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyu5woIzLeOyYlRAlaLl7ntxUDwfVtcbUq716Ywm5sFldapAY-JbXZMSdO_2OHdvq3a/exec";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
+// Validate required environment variables
 if (!OPENAI_API_KEY) {
-  console.error("❌ Missing OPENAI_API_KEY! Make sure apikey.env is set up correctly.");
+  console.error("❌ Missing OPENAI_API_KEY! Please set it in your environment variables.");
   process.exit(1);
 }
 
-// Middleware
-app.use(cors());
+// Configure CORS options
+const corsOptions = {
+  origin:
+    process.env.NODE_ENV === "production"
+      ? "https://journal-whisper.onrender.com" // <-- Update to your deployed frontend domain (no trailing slash)
+      : "http://localhost:3000",               // React dev server default port
+  optionsSuccessStatus: 200,  // For legacy browser support
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
-// Serve React static files from build
+// Serve React build files
 app.use(express.static(path.join(__dirname, "../build")));
 
-// Health check route
+// Health check endpoint
 app.get("/health", (req, res) => {
-  res.send(`✅ Proxy server is running on port ${PORT}`);
+  res.send(`✅ Proxy server running on port ${PORT}`);
 });
 
-// Multer config for audio upload
+// Multer setup for handling file uploads (in-memory)
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Whisper transcription endpoint
+// Whisper API endpoint to transcribe audio
 app.post("/transcribeAudio", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
@@ -69,7 +82,7 @@ app.post("/transcribeAudio", upload.single("file"), async (req, res) => {
   }
 });
 
-// Save journal entry to Google Sheets
+// Endpoint to save journal entry to Google Sheets
 app.post("/saveEntry", async (req, res) => {
   try {
     const { timestamp, entry, user } = req.body;
@@ -90,12 +103,13 @@ app.post("/saveEntry", async (req, res) => {
       return res.status(500).json({ error: "Failed to save entry to Google Sheets." });
     }
 
-    const result = await response.text();
+    const resultText = await response.text();
 
     try {
-      res.json(JSON.parse(result));
+      const resultJson = JSON.parse(resultText);
+      res.json(resultJson);
     } catch {
-      res.json({ message: result });
+      res.json({ message: resultText });
     }
   } catch (error) {
     console.error("Error in /saveEntry:", error);
@@ -103,12 +117,14 @@ app.post("/saveEntry", async (req, res) => {
   }
 });
 
-// Catch-all route for React Router support (must be last!)
+// Catch-all handler to serve React app for all other routes (supports React Router)
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "../build/index.html"));
 });
 
-// Start the server
+// Start server and listen on specified port
 app.listen(PORT, () => {
-  console.log(`🚀 Unified server running at http://localhost:${PORT}`);
+  console.log(`🚀 Server is running at http://localhost:${PORT} (env: ${process.env.NODE_ENV})`);
+}).on("error", (err) => {
+  console.error("Failed to start server:", err);
 });
