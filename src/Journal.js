@@ -12,9 +12,10 @@ export default function Journal({ user, onLogout }) {
   const [showToast, setShowToast] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [currentTimestamp, setCurrentTimestamp] = useState("");
-  const [countdown, setCountdown] = useState(180); // 3 minutes countdown seconds
-
-  const recognitionRef = useRef(null);
+  const [countdown, setCountdown] = useState(0);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
   const countdownIntervalRef = useRef(null);
 
   const generateTimestamp = () => {
@@ -26,103 +27,114 @@ export default function Journal({ user, onLogout }) {
     setCurrentTimestamp(generateTimestamp());
   }, []);
 
-  const saveToGoogleSheet = async (timestamp, text, username) => {
+  const startRecording = async (durationSeconds) => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setSaveMessage("Audio recording not supported in this browser.");
+      setShowToast(true);
+      return;
+    }
     try {
-      const response = await fetch(PROXY_API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ timestamp, entry: text, user: username }),
-      });
-      if (!response.ok)
-        throw new Error("Failed to save entry to Google Sheets");
-      return await response.json();
-    } catch (error) {
-      setSaveMessage("Error saving to Google Sheets: " + error.message);
-      return null;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      setRecordingDuration(durationSeconds);
+      setCurrentTimestamp(generateTimestamp());
+      setCountdown(durationSeconds);
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstart = () => {
+        setIsRecording(true);
+        setShowToast(true);
+        setSaveMessage("Recording in progress...");
+        countdownIntervalRef.current = setInterval(() => {
+          setCountdown((prev) => {
+            if (prev <= 1) {
+              stopRecording();
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      };
+
+      mediaRecorder.onstop = async () => {
+        clearInterval(countdownIntervalRef.current);
+        setCountdown(0);
+        setIsRecording(false);
+        setRecordingDuration(0);
+        setSaveMessage(""); // stop showing "Recording in progress..."
+
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        try {
+          const formData = new FormData();
+          formData.append("file", audioBlob, "recording.webm");
+          formData.append("user", user);
+
+          const response = await fetch(PROXY_API_URL, {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!response.ok) {
+            throw new Error(`Transcription failed: ${response.statusText}`);
+          }
+
+          const data = await response.json();
+
+          if (data.transcription) {
+            // Put transcription text into textarea entry
+            setEntry(data.transcription);
+
+            // Show transcription toast
+            setSaveMessage("Transcription received. Please review and save manually.");
+            setShowToast(true);
+
+            // NOTE: Removed automatic save to Google Sheets here.
+          } else {
+            setSaveMessage("No transcription received.");
+            setShowToast(true);
+          }
+        } catch (error) {
+          setSaveMessage("Error during transcription: " + error.message);
+          setShowToast(true);
+        }
+      };
+
+      mediaRecorder.start();
+    } catch (err) {
+      setSaveMessage("Could not start recording: " + err.message);
+      setShowToast(true);
     }
   };
 
   const stopRecording = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.onend = null; // disable auto restart before stopping
-      recognitionRef.current.stop();
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
     }
     clearInterval(countdownIntervalRef.current);
-    setCountdown(180);
     setIsRecording(false);
-    setShowToast(false);
-    setSaveMessage("Recording stopped");
   };
 
-  const startRecognition = () => {
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setSaveMessage("Voice recognition not supported in this browser.");
-      setShowToast(true);
-      return;
-    }
-
-    if (!recognitionRef.current) {
-      const recognition = new SpeechRecognition();
-      recognition.lang = "en-US";
-      recognition.continuous = true; // Keep listening until stopped
-      recognition.interimResults = false;
-
-      recognition.onstart = () => {
-        setIsRecording(true);
-        setShowToast(true);
-        setSaveMessage("I am listening, please go ahead");
-      };
-
-      recognition.onresult = (event) => {
-        const transcript = event.results[event.resultIndex][0].transcript;
-        setEntry((prev) => (prev ? prev + "\n" : "") + transcript);
-        setSaveMessage("I am listening, please go ahead");
-      };
-
-      recognition.onerror = (event) => {
-        setSaveMessage("Recognition error: " + event.error);
-        setShowToast(true);
-      };
-
-      recognition.onend = () => {
-        // Restart recognition only if still recording and countdown not finished
-        if (isRecording && countdown > 0) {
-          setSaveMessage("waiting");
-          try {
-            recognition.start();
-          } catch {
-            // If restart throws due to state, ignore
-          }
-        }
-      };
-
-      recognitionRef.current = recognition;
-    }
-
-    recognitionRef.current.start();
-
-    // Start countdown timer for 180 seconds
-    setCountdown(180);
-    countdownIntervalRef.current = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          stopRecording();
-          setSaveMessage("Recording finished");
-          setShowToast(true);
-          return 0;
-        }
-        return prev - 1;
+  const saveToGoogleSheet = async (timestamp, text, username) => {
+    try {
+      const response = await fetch("http://localhost:8090/saveEntry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ timestamp, entry: text, user: username }),
       });
-    }, 1000);
-  };
-
-  const handleRedButtonClick = () => {
-    if (!isRecording) {
-      startRecognition();
-    } else {
-      stopRecording();
+      if (!response.ok) throw new Error("Failed to save entry to Google Sheets");
+      return await response.json();
+    } catch (error) {
+      setSaveMessage("Error saving to Google Sheets: " + error.message);
+      setShowToast(true);
+      return null;
     }
   };
 
@@ -152,20 +164,25 @@ export default function Journal({ user, onLogout }) {
 
   useEffect(() => {
     return () => {
-      if (recognitionRef.current) recognitionRef.current.stop();
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
       clearInterval(countdownIntervalRef.current);
     };
   }, []);
 
   useEffect(() => {
     if (saveMessage) {
-      const timer = setTimeout(() => setSaveMessage(""), 4000);
+      const timer = setTimeout(() => setSaveMessage(""), 6000);
       return () => clearTimeout(timer);
     }
   }, [saveMessage]);
 
-  // Simple fancy countdown progress bar
-  const countdownPercent = ((180 - countdown) / 180) * 100;
+  const getButtonProgress = () => {
+    if (recordingDuration === 0) return "0%";
+    const percent = ((recordingDuration - countdown) / recordingDuration) * 100;
+    return `${percent}%`;
+  };
 
   return (
     <div
@@ -179,33 +196,28 @@ export default function Journal({ user, onLogout }) {
         color: "#222",
       }}
     >
-      {/* Countdown Bar */}
-      {isRecording && (
+      {showToast && saveMessage && (
         <div
           style={{
             position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100%",
-            height: "16px", // wider bar
-            backgroundColor: "#d0f0d0",
+            top: "40px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            backgroundColor: "#333",
+            color: "white",
+            padding: "10px 20px",
+            borderRadius: "20px",
+            boxShadow: "0 2px 10px rgba(0,0,0,0.7)",
             zIndex: 9999,
-            boxShadow: "0 2px 5px rgba(0,0,0,0.1)",
+            fontSize: "1rem",
+            opacity: 0.9,
+            userSelect: "none",
           }}
-          aria-label="Recording countdown timer"
+          aria-live="polite"
         >
-          <div
-            style={{
-              width: `${countdownPercent}%`,
-              height: "100%",
-              background: "linear-gradient(90deg, #2ecc71, #27ae60)",
-              transition: "width 1s linear",
-            }}
-          />
+          {saveMessage}
         </div>
       )}
-
-      {/* Removed numeric countdown text */}
 
       <div
         style={{
@@ -215,11 +227,7 @@ export default function Journal({ user, onLogout }) {
           marginBottom: "1rem",
         }}
       >
-        <img
-          src={logo}
-          alt="My Logo"
-          style={{ maxWidth: "150px", height: "auto" }}
-        />
+        <img src={logo} alt="My Logo" style={{ maxWidth: "150px", height: "auto" }} />
         <div>
           <strong>User:</strong> {user}
           <button
@@ -240,140 +248,126 @@ export default function Journal({ user, onLogout }) {
         </div>
       </div>
 
-      {showToast && (
-        <div
-          style={{
-            position: "fixed",
-            top: "40px",
-            left: "50%",
-            transform: "translateX(-50%)",
-            backgroundColor: "#333",
-            color: "white",
-            padding: "10px 20px",
-            borderRadius: "20px",
-            boxShadow: "0 2px 10px rgba(0,0,0,0.7)",
-            zIndex: 9999,
-            fontSize: "1rem",
-            opacity: 0.9,
-            userSelect: "none",
-          }}
-          aria-live="polite"
-        >
-          {saveMessage || "waiting"}
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit}>
-        <div style={{ display: "flex", gap: "1.5rem" }}>
-          <div
+      {/* Recording buttons */}
+      <div
+        style={{
+          display: "flex",
+          gap: "1rem",
+          marginBottom: "1rem",
+          justifyContent: "center",
+        }}
+      >
+        {[
+          { label: "What are you doing/feeling?", duration: 30 },
+          { label: "What I plan to do next?", duration: 60 },
+          { label: "Tell me a story?", duration: 180 },
+        ].map(({ label, duration }) => (
+          <button
+            key={label}
+            onClick={() => {
+              if (isRecording && recordingDuration === duration) {
+                stopRecording();
+              } else if (!isRecording) {
+                startRecording(duration);
+              }
+            }}
+            disabled={isRecording && recordingDuration !== duration}
             style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "1rem",
-              flexShrink: 0,
-              marginTop: "4rem",
+              position: "relative",
+              padding: "1rem",
+              fontSize: "1rem",
+              borderRadius: 8,
+              border: "none",
+              cursor: isRecording && recordingDuration !== duration ? "not-allowed" : "pointer",
+              width: "220px",
+              backgroundColor:
+                isRecording && recordingDuration === duration ? "#FF0000" : "#FFD700",
+              color: "#000",
+              overflow: "hidden",
+              userSelect: "none",
+              fontWeight: "600",
+              boxShadow: isRecording && recordingDuration === duration ? "0 0 10px #ff4444" : "none",
+              transition: "background-color 0.3s ease",
             }}
           >
-            <button
-              type="button"
-              onClick={handleRedButtonClick}
-              style={{
-                backgroundColor: "#e74c3c", // red color
-                color: "white",
-                fontSize: "1.5rem",
-                width: "80px",
-                height: "80px",
-                border: "none",
-                borderRadius: "50%",
-                cursor: "pointer",
-                boxShadow: "0 0 15px 5px rgba(231, 76, 60, 0.7)", // red glow
-              }}
-              title={isRecording ? "Stop recording" : "Start recording"}
-            >
-              {isRecording ? "Stop" : "Record"}
-            </button>
-          </div>
-
-          <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.5rem",
-                marginBottom: "0.5rem",
-              }}
-            >
-              <input
-                type="text"
-                readOnly
-                value={currentTimestamp}
+            {label}
+            {isRecording && recordingDuration === duration && (
+              <div
                 style={{
-                  flexGrow: 1,
-                  fontWeight: "bold",
-                  fontSize: "1.2rem",
-                  borderRadius: "6px",
-                  border: "1px solid #ccc",
-                  padding: "0.3rem 0.6rem",
-                  backgroundColor: "#f9f9f9",
-                  color: "#333",
+                  position: "absolute",
+                  bottom: 0,
+                  left: 0,
+                  height: "6px",
+                  background: "#27ae60",
+                  width: getButtonProgress(),
+                  transition: "width 1s linear",
                 }}
               />
-              <button
-                type="button"
-                onClick={handleRefreshTime}
-                style={{
-                  padding: "0.3rem 0.75rem",
-                  fontSize: "1rem",
-                  cursor: "pointer",
-                  borderRadius: "6px",
-                  border: "1px solid #888",
-                  backgroundColor: "#f0f0f0",
-                  color: "#333",
-                  fontWeight: "bold",
-                }}
-              >
-                Refresh Time
-              </button>
-            </div>
+            )}
+          </button>
+        ))}
+      </div>
 
-            <textarea
-              rows={12}
-              value={entry}
-              onChange={(e) => setEntry(e.target.value)}
-              placeholder="Type or dictate your journal entry..."
-              style={{
-                width: "100%",
-                padding: "0.5rem",
-                fontSize: "1rem",
-                borderRadius: "6px",
-                border: "1px solid #ccc",
-                backgroundColor: "#fff",
-                color: "#222",
-                whiteSpace: "pre-wrap",
-              }}
-            />
-          </div>
-        </div>
-
+      {/* Current timestamp display */}
+      <div style={{ textAlign: "center", marginBottom: "1rem", fontSize: "1.1rem" }}>
+        <span>{currentTimestamp}</span>{" "}
         <button
-          type="submit"
+          onClick={handleRefreshTime}
           style={{
-            marginTop: "1.5rem",
-            display: "block",
-            marginLeft: "auto",
-            marginRight: "auto",
-            padding: "0.75rem 2rem",
-            fontSize: "1rem",
-            borderRadius: "6px",
-            border: "none",
+            marginLeft: "1rem",
+            padding: "0.3rem 0.75rem",
+            fontSize: "0.9rem",
             cursor: "pointer",
-            backgroundColor: "#4CAF50",
-            color: "white",
-            boxShadow: "0 3px 6px rgba(0,0,0,0.2)",
+            borderRadius: "6px",
+            border: "1px solid #888",
+            backgroundColor: "#f0f0f0",
+            color: "#333",
           }}
+          title="Refresh timestamp"
         >
-          Save Entry
+          Refresh Time
         </button>
+      </div>
+
+      {/* Manual entry box */}
+      <form onSubmit={handleSubmit}>
+        <textarea
+          placeholder="Write your journal entry here..."
+          value={entry}
+          onChange={(e) => setEntry(e.target.value)}
+          style={{
+            width: "100%",
+            height: "150px",
+            fontSize: "1rem",
+            padding: "0.75rem",
+            borderRadius: 8,
+            border: "1px solid #ccc",
+            resize: "vertical",
+            marginBottom: "1rem",
+            fontFamily: "inherit",
+          }}
+          disabled={isRecording}
+        />
+
+        <div style={{ textAlign: "right" }}>
+          <button
+            type="submit"
+            disabled={isRecording}
+            style={{
+              padding: "0.6rem 1.5rem",
+              fontSize: "1rem",
+              backgroundColor: "#27ae60",
+              color: "white",
+              border: "none",
+              borderRadius: "8px",
+              cursor: isRecording ? "not-allowed" : "pointer",
+              userSelect: "none",
+              fontWeight: "600",
+            }}
+          >
+            Save Entry
+          </button>
+        </div>
       </form>
     </div>
   );
