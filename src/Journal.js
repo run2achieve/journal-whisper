@@ -209,8 +209,11 @@ export default function Journal({ user, onLogout }) {
       setShowToast(true);
       setEntry("");
       setCurrentTimestamp(generateTimestamp());
-      // Refresh entries after save
-      fetchEntriesForDate(selectedDate);
+
+      // Update selectedDate and fetch entries for that date to refresh view
+      const savedDate = new Date(currentTimestamp.date + "T00:00:00");
+      setSelectedDate(savedDate);
+      fetchEntriesForDate(savedDate);
     } else {
       setSaveMessage("Failed to save entry. Please try again.");
       setShowToast(true);
