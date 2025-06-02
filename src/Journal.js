@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
-import logo from "./Assets/logo.png";
+import logo from "./assets/logo.png";
 
 const PROXY_API_URL =
   window.location.hostname === "localhost"
