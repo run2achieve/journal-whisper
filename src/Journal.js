@@ -274,12 +274,13 @@ export default function Journal({ user, onLogout }) {
             disabled={isRecording && recordingDuration !== duration}
             style={{
               position: "relative",
-              padding: "1rem",
+              padding: 0,
               fontSize: "1rem",
-              borderRadius: 8,
+              borderRadius: isRecording && recordingDuration === duration ? 4 : "50%",
               border: "none",
               cursor: isRecording && recordingDuration !== duration ? "not-allowed" : "pointer",
-              width: "220px",
+              width: "70px",
+              height: "70px",
               backgroundColor:
                 isRecording && recordingDuration === duration ? "#FF0000" : "#FFD700",
               color: "#000",
@@ -290,7 +291,12 @@ export default function Journal({ user, onLogout }) {
                 isRecording && recordingDuration === duration
                   ? "0 0 10px #ff4444"
                   : "none",
-              transition: "background-color 0.3s ease",
+              transition:
+                "background-color 0.3s ease, border-radius 0.3s ease, width 0.3s ease, height 0.3s ease",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              textAlign: "center",
             }}
           >
             {label}
