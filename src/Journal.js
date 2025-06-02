@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
+import Calendar from "react-calendar";
+import 'react-calendar/dist/Calendar.css';
 import logo from "./assets/logo.png";
 
 const PROXY_API_URL =
@@ -11,9 +13,15 @@ export default function Journal({ user, onLogout }) {
   const [isRecording, setIsRecording] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
-  const [currentTimestamp, setCurrentTimestamp] = useState({ date: "", time: "" });
+  const [currentTimestamp, setCurrentTimestamp] = useState({
+    date: "",
+    time: "",
+  });
   const [countdown, setCountdown] = useState(0);
   const [recordingDuration, setRecordingDuration] = useState(0);
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [entriesForDate, setEntriesForDate] = useState([]);
+
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const countdownIntervalRef = useRef(null);
@@ -29,6 +37,33 @@ export default function Journal({ user, onLogout }) {
   useEffect(() => {
     setCurrentTimestamp(generateTimestamp());
   }, []);
+
+  useEffect(() => {
+    const fetchEntriesForDate = async () => {
+      const FETCH_API_URL =
+        window.location.hostname === "localhost"
+          ? "http://localhost:8090/getEntries"
+          : "https://journal-whisper.onrender.com/getEntries";
+
+      try {
+        const response = await fetch(FETCH_API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user,
+            date: selectedDate.toLocaleDateString(),
+          }),
+        });
+        if (!response.ok) throw new Error("Failed to fetch entries");
+        const data = await response.json();
+        setEntriesForDate(data.entries || []);
+      } catch (err) {
+        setEntriesForDate([]);
+      }
+    };
+
+    fetchEntriesForDate();
+  }, [selectedDate, user]);
 
   const startRecording = async (durationSeconds) => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -74,7 +109,9 @@ export default function Journal({ user, onLogout }) {
         setRecordingDuration(0);
         setSaveMessage("");
 
-        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        const audioBlob = new Blob(audioChunksRef.current, {
+          type: "audio/webm",
+        });
         try {
           const formData = new FormData();
           formData.append("file", audioBlob, "recording.webm");
@@ -85,15 +122,15 @@ export default function Journal({ user, onLogout }) {
             body: formData,
           });
 
-          if (!response.ok) {
+          if (!response.ok)
             throw new Error(`Transcription failed: ${response.statusText}`);
-          }
 
           const data = await response.json();
-
           if (data.transcription) {
             setEntry(data.transcription);
-            setSaveMessage("Transcription received. Please review and save manually.");
+            setSaveMessage(
+              "Transcription received. Please review and save manually."
+            );
             setShowToast(true);
           } else {
             setSaveMessage("No transcription received.");
@@ -113,7 +150,10 @@ export default function Journal({ user, onLogout }) {
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+    if (
+      mediaRecorderRef.current &&
+      mediaRecorderRef.current.state !== "inactive"
+    ) {
       mediaRecorderRef.current.stop();
     }
     clearInterval(countdownIntervalRef.current);
@@ -132,7 +172,8 @@ export default function Journal({ user, onLogout }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ date, time, entry: text, user: username }),
       });
-      if (!response.ok) throw new Error("Failed to save entry to Google Sheets");
+      if (!response.ok)
+        throw new Error("Failed to save entry to Google Sheets");
       return await response.json();
     } catch (error) {
       setSaveMessage("Error saving to Google Sheets: " + error.message);
@@ -172,7 +213,10 @@ export default function Journal({ user, onLogout }) {
 
   useEffect(() => {
     return () => {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      if (
+        mediaRecorderRef.current &&
+        mediaRecorderRef.current.state !== "inactive"
+      ) {
         mediaRecorderRef.current.stop();
       }
       clearInterval(countdownIntervalRef.current);
@@ -235,7 +279,11 @@ export default function Journal({ user, onLogout }) {
           marginBottom: "1rem",
         }}
       >
-        <img src={logo} alt="My Logo" style={{ maxWidth: "150px", height: "auto" }} />
+        <img
+          src={logo}
+          alt="My Logo"
+          style={{ maxWidth: "150px", height: "auto" }}
+        />
         <div>
           <strong>User:</strong> {user}
           <button
@@ -265,58 +313,63 @@ export default function Journal({ user, onLogout }) {
           justifyContent: "center",
         }}
       >
-        {[{ label: "30s", duration: 30 }, { label: "60s", duration: 60 }, { label: "180s", duration: 180 }].map(
-          ({ label, duration }) => {
-            const isActive = isRecording && recordingDuration === duration;
-            return (
-              <button
-                key={label}
-                onClick={() => {
-                  if (isActive) {
-                    stopRecording();
-                  } else if (!isRecording) {
-                    startRecording(duration);
-                  }
-                }}
-                disabled={isRecording && recordingDuration !== duration}
-                style={{
-                  position: "relative",
-                  height: "60px",
-                  width: "60px",
-                  borderRadius: isActive ? "8px" : "50%",
-                  border: "none",
-                  backgroundColor: isActive ? "#FF0000" : "#FFD700",
-                  color: "#000",
-                  fontSize: "0.9rem",
-                  fontWeight: "bold",
-                  boxShadow: isActive ? "0 0 10px #ff4444" : "none",
-                  cursor: isRecording && recordingDuration !== duration ? "not-allowed" : "pointer",
-                  transition: "all 0.3s ease",
-                  userSelect: "none",
-                }}
-                title={label}
-              >
-                {!isActive && label}
-                {isActive && (
-                  <div
-                    style={{
-                      position: "absolute",
-                      bottom: 0,
-                      left: 0,
-                      height: "6px",
-                      background: "#27ae60",
-                      width: getButtonProgress(),
-                      transition: "width 1s linear",
-                    }}
-                  />
-                )}
-              </button>
-            );
-          }
-        )}
+        {[
+          { label: "30s", duration: 30 },
+          { label: "60s", duration: 60 },
+          { label: "180s", duration: 180 },
+        ].map(({ label, duration }) => {
+          const isActive = isRecording && recordingDuration === duration;
+          return (
+            <button
+              key={label}
+              onClick={() => {
+                if (isActive) {
+                  stopRecording();
+                } else if (!isRecording) {
+                  startRecording(duration);
+                }
+              }}
+              disabled={isRecording && recordingDuration !== duration}
+              style={{
+                position: "relative",
+                height: "60px",
+                width: "60px",
+                borderRadius: isActive ? "8px" : "50%",
+                border: "none",
+                backgroundColor: isActive ? "#FF0000" : "#FFD700",
+                color: "#000",
+                fontSize: "0.9rem",
+                fontWeight: "bold",
+                boxShadow: isActive ? "0 0 10px #ff4444" : "none",
+                cursor:
+                  isRecording && recordingDuration !== duration
+                    ? "not-allowed"
+                    : "pointer",
+                transition: "all 0.3s ease",
+                userSelect: "none",
+              }}
+              title={label}
+            >
+              {!isActive && label}
+              {isActive && (
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: 0,
+                    left: 0,
+                    height: "6px",
+                    background: "#27ae60",
+                    width: getButtonProgress(),
+                    transition: "width 1s linear",
+                  }}
+                />
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Current timestamp display */}
+      {/* Timestamp */}
       <div
         style={{
           textAlign: "center",
@@ -326,7 +379,7 @@ export default function Journal({ user, onLogout }) {
       >
         <span>
           📅 {currentTimestamp.date} 🕒 {currentTimestamp.time}
-        </span>{" "}
+        </span>
         <button
           onClick={handleRefreshTime}
           style={{
@@ -345,7 +398,6 @@ export default function Journal({ user, onLogout }) {
         </button>
       </div>
 
-      {/* Manual entry box */}
       <form onSubmit={handleSubmit}>
         <textarea
           placeholder="Write your journal entry here..."
@@ -364,7 +416,6 @@ export default function Journal({ user, onLogout }) {
           }}
           disabled={isRecording}
         />
-
         <div style={{ textAlign: "right" }}>
           <button
             type="submit"
@@ -385,6 +436,36 @@ export default function Journal({ user, onLogout }) {
           </button>
         </div>
       </form>
+
+      <hr style={{ margin: "2rem 0", borderColor: "#ccc" }} />
+      <h2 style={{ textAlign: "center", marginBottom: "1rem" }}>
+        📅 Journal Calendar
+      </h2>
+
+      <div style={{ display: "flex", justifyContent: "center" }}>
+        <Calendar
+          onChange={setSelectedDate}
+          value={selectedDate}
+          locale="en-US"
+        />
+      </div>
+
+      {entriesForDate.length > 0 ? (
+        <div style={{ marginTop: "1rem" }}>
+          <h3>Entries on {selectedDate.toLocaleDateString()}:</h3>
+          <ul>
+            {entriesForDate.map((e, idx) => (
+              <li key={idx} style={{ marginBottom: "0.75rem" }}>
+                <strong>{e.time}:</strong> {e.entry}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p style={{ marginTop: "1rem", textAlign: "center" }}>
+          No entries for {selectedDate.toLocaleDateString()}.
+        </p>
+      )}
     </div>
   );
 }
