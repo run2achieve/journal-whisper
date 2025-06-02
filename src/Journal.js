@@ -28,6 +28,7 @@ export default function Journal({ user, onLogout }) {
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [entriesForDate, setEntriesForDate] = useState([]);
+  const [localEntries, setLocalEntries] = useState({}); // New: local entries per date
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -70,6 +71,10 @@ export default function Journal({ user, onLogout }) {
 
   useEffect(() => {
     fetchEntriesForDate(selectedDate);
+    setEntry(""); // Clear input when date changes
+    // Clear local entry display when changing dates:
+    setShowToast(false);
+    setSaveMessage("");
   }, [selectedDate, user]);
 
   const startRecording = async (durationSeconds) => {
@@ -211,6 +216,12 @@ export default function Journal({ user, onLogout }) {
       const savedDate = new Date(currentTimestamp.date + "T00:00:00");
       setSelectedDate(savedDate);
       fetchEntriesForDate(savedDate);
+
+      // Also save the entry locally for this date:
+      setLocalEntries((prev) => ({
+        ...prev,
+        [formatDateLocal(savedDate)]: entry,
+      }));
     } else {
       setSaveMessage("Failed to save entry. Please try again.");
       setShowToast(true);
@@ -222,6 +233,7 @@ export default function Journal({ user, onLogout }) {
     setSaveMessage("");
   };
 
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (
@@ -234,6 +246,7 @@ export default function Journal({ user, onLogout }) {
     };
   }, []);
 
+  // Hide toast after 6s
   useEffect(() => {
     if (saveMessage) {
       const timer = setTimeout(() => setSaveMessage(""), 6000);
@@ -246,6 +259,12 @@ export default function Journal({ user, onLogout }) {
     const percent = ((recordingDuration - countdown) / recordingDuration) * 100;
     return `${percent}%`;
   };
+
+  // When calendar date changes, clear local entry display
+  useEffect(() => {
+    // Optional: If you want to clear local entry input too on date change:
+    // setEntry("");
+  }, [selectedDate]);
 
   return (
     <div
@@ -455,8 +474,36 @@ export default function Journal({ user, onLogout }) {
       </h2>
 
       <div style={{ display: "flex", justifyContent: "center" }}>
-        <Calendar onChange={setSelectedDate} value={selectedDate} locale="en-US" />
+        <Calendar
+          onChange={(date) => {
+            setSelectedDate(date);
+            // Clear the local entry display when changing dates
+            // (Optional: clear entry input as well)
+            setShowToast(false);
+            setSaveMessage("");
+          }}
+          value={selectedDate}
+          locale="en-US"
+        />
       </div>
+
+      {/* Local entry for selected date */}
+      {localEntries[formatDateLocal(selectedDate)] && (
+        <div
+          style={{
+            marginTop: "1rem",
+            padding: "1rem",
+            backgroundColor: "#e0ffe0",
+            borderRadius: "8px",
+            border: "1px solid #27ae60",
+          }}
+        >
+          <h3>Local Entry (not yet saved to server) for {formatDateLocal(selectedDate)}:</h3>
+          <p style={{ whiteSpace: "pre-wrap" }}>
+            {localEntries[formatDateLocal(selectedDate)]}
+          </p>
+        </div>
+      )}
 
       {entriesForDate.length > 0 ? (
         <div style={{ marginTop: "1rem" }}>
