@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import Calendar from "react-calendar";
-import "react-calendar/dist/Calendar.css";
+import 'react-calendar/dist/Calendar.css';
 import logo from "./assets/logo.png";
 
 const PROXY_API_URL =
@@ -20,15 +20,12 @@ export default function Journal({ user, onLogout }) {
   const [isRecording, setIsRecording] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
-  const [currentTimestamp, setCurrentTimestamp] = useState({
-    date: "",
-    time: "",
-  });
+  const [currentTimestamp, setCurrentTimestamp] = useState({ date: "", time: "" });
   const [countdown, setCountdown] = useState(0);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [entriesForDate, setEntriesForDate] = useState([]);
-  const [localEntries, setLocalEntries] = useState({}); // New: local entries per date
+  const [localEntries, setLocalEntries] = useState({});
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -56,10 +53,7 @@ export default function Journal({ user, onLogout }) {
       const response = await fetch(FETCH_API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user,
-          date: formatDateLocal(dateToFetch),
-        }),
+        body: JSON.stringify({ user, date: formatDateLocal(dateToFetch) }),
       });
       if (!response.ok) throw new Error("Failed to fetch entries");
       const data = await response.json();
@@ -71,10 +65,6 @@ export default function Journal({ user, onLogout }) {
 
   useEffect(() => {
     fetchEntriesForDate(selectedDate);
-    setEntry(""); // Clear input when date changes
-    // Clear local entry display when changing dates:
-    setShowToast(false);
-    setSaveMessage("");
   }, [selectedDate, user]);
 
   const startRecording = async (durationSeconds) => {
@@ -121,9 +111,7 @@ export default function Journal({ user, onLogout }) {
         setRecordingDuration(0);
         setSaveMessage("");
 
-        const audioBlob = new Blob(audioChunksRef.current, {
-          type: "audio/webm",
-        });
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
         try {
           const formData = new FormData();
           formData.append("file", audioBlob, "recording.webm");
@@ -140,9 +128,7 @@ export default function Journal({ user, onLogout }) {
           const data = await response.json();
           if (data.transcription) {
             setEntry(data.transcription);
-            setSaveMessage(
-              "Transcription received. Please review and save manually."
-            );
+            setSaveMessage("Transcription received. Please review and save manually.");
             setShowToast(true);
           } else {
             setSaveMessage("No transcription received.");
@@ -162,10 +148,7 @@ export default function Journal({ user, onLogout }) {
   };
 
   const stopRecording = () => {
-    if (
-      mediaRecorderRef.current &&
-      mediaRecorderRef.current.state !== "inactive"
-    ) {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
     }
     clearInterval(countdownIntervalRef.current);
@@ -184,8 +167,7 @@ export default function Journal({ user, onLogout }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ date, time, entry: text, user: username }),
       });
-      if (!response.ok)
-        throw new Error("Failed to save entry to Google Sheets");
+      if (!response.ok) throw new Error("Failed to save entry to Google Sheets");
       return await response.json();
     } catch (error) {
       setSaveMessage("Error saving to Google Sheets: " + error.message);
@@ -208,7 +190,7 @@ export default function Journal({ user, onLogout }) {
       user
     );
     if (result) {
-      setSaveMessage("Journal entry saved successfully!");
+      setSaveMessage("Journal entry saved!");
       setShowToast(true);
       setEntry("");
       setCurrentTimestamp(generateTimestamp());
@@ -217,11 +199,14 @@ export default function Journal({ user, onLogout }) {
       setSelectedDate(savedDate);
       fetchEntriesForDate(savedDate);
 
-      // Also save the entry locally for this date:
-      setLocalEntries((prev) => ({
-        ...prev,
-        [formatDateLocal(savedDate)]: entry,
-      }));
+      setLocalEntries((prev) => {
+        const dateKey = formatDateLocal(savedDate);
+        const existing = prev[dateKey] || [];
+        return {
+          ...prev,
+          [dateKey]: [entry, ...existing],
+        };
+      });
     } else {
       setSaveMessage("Failed to save entry. Please try again.");
       setShowToast(true);
@@ -233,20 +218,15 @@ export default function Journal({ user, onLogout }) {
     setSaveMessage("");
   };
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (
-        mediaRecorderRef.current &&
-        mediaRecorderRef.current.state !== "inactive"
-      ) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
         mediaRecorderRef.current.stop();
       }
       clearInterval(countdownIntervalRef.current);
     };
   }, []);
 
-  // Hide toast after 6s
   useEffect(() => {
     if (saveMessage) {
       const timer = setTimeout(() => setSaveMessage(""), 6000);
@@ -260,267 +240,25 @@ export default function Journal({ user, onLogout }) {
     return `${percent}%`;
   };
 
-  // When calendar date changes, clear local entry display
-  useEffect(() => {
-    // Optional: If you want to clear local entry input too on date change:
-    // setEntry("");
-  }, [selectedDate]);
-
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        backgroundColor: "#FFF8E7",
-        padding: "2rem",
-        fontFamily: "sans-serif",
-        maxWidth: 700,
-        margin: "auto",
-        color: "#222",
-      }}
-    >
+    <div style={{ minHeight: "100vh", backgroundColor: "#FFF8E7", padding: "2rem", fontFamily: "sans-serif", maxWidth: 700, margin: "auto", color: "#222" }}>
       {showToast && saveMessage && (
-        <div
-          style={{
-            position: "fixed",
-            top: "40px",
-            left: "50%",
-            transform: "translateX(-50%)",
-            backgroundColor: "#333",
-            color: "white",
-            padding: "10px 20px",
-            borderRadius: "20px",
-            boxShadow: "0 2px 10px rgba(0,0,0,0.7)",
-            zIndex: 9999,
-            fontSize: "1rem",
-            opacity: 0.9,
-            userSelect: "none",
-          }}
-          aria-live="polite"
-        >
+        <div style={{ position: "fixed", top: "40px", left: "50%", transform: "translateX(-50%)", backgroundColor: "#333", color: "white", padding: "10px 20px", borderRadius: "20px", boxShadow: "0 2px 10px rgba(0,0,0,0.7)", zIndex: 9999, fontSize: "1rem", opacity: 0.9, userSelect: "none" }} aria-live="polite">
           {saveMessage}
         </div>
       )}
 
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "1rem",
-        }}
-      >
-        <img
-          src={logo}
-          alt="My Logo"
-          style={{ maxWidth: "150px", height: "auto" }}
-        />
-        <div>
-          <strong>User:</strong> {user}
-          <button
-            onClick={onLogout}
-            style={{
-              marginLeft: "1rem",
-              padding: "0.3rem 0.75rem",
-              fontSize: "1rem",
-              cursor: "pointer",
-              borderRadius: "6px",
-              border: "1px solid #888",
-              backgroundColor: "#f0f0f0",
-              color: "#333",
-            }}
-          >
-            Logout
-          </button>
-        </div>
-      </div>
-
-      {/* Recording buttons */}
-      <div
-        style={{
-          display: "flex",
-          gap: "1rem",
-          marginBottom: "1rem",
-          justifyContent: "center",
-        }}
-      >
-        {[
-          { label: "30s", duration: 30 },
-          { label: "60s", duration: 60 },
-          { label: "180s", duration: 180 },
-        ].map(({ label, duration }) => {
-          const isActive = isRecording && recordingDuration === duration;
-          return (
-            <button
-              key={label}
-              onClick={() => {
-                if (isActive) {
-                  stopRecording();
-                } else if (!isRecording) {
-                  startRecording(duration);
-                }
-              }}
-              disabled={isRecording && recordingDuration !== duration}
-              style={{
-                position: "relative",
-                height: "60px",
-                width: "60px",
-                borderRadius: isActive ? "8px" : "50%",
-                border: "none",
-                backgroundColor: isActive ? "#FF0000" : "#FFD700",
-                color: "#000",
-                fontSize: "0.9rem",
-                fontWeight: "bold",
-                boxShadow: isActive ? "0 0 10px #ff4444" : "none",
-                cursor:
-                  isRecording && recordingDuration !== duration
-                    ? "not-allowed"
-                    : "pointer",
-                transition: "all 0.3s ease",
-                userSelect: "none",
-              }}
-              title={label}
-            >
-              {!isActive && label}
-              {isActive && (
-                <div
-                  style={{
-                    position: "absolute",
-                    bottom: 0,
-                    left: 0,
-                    height: "8px",
-                    background: "#27ae60",
-                    width: getButtonProgress(),
-                    transition: "width 0.3s ease",
-                    borderRadius: "0 0 8px 8px",
-                  }}
-                />
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Timestamp */}
-      <div
-        style={{
-          textAlign: "center",
-          marginBottom: "1rem",
-          fontSize: "1.1rem",
-        }}
-      >
-        <span>
-          📅 {currentTimestamp.date} 🕒 {currentTimestamp.time}
-        </span>
-        <button
-          onClick={handleRefreshTime}
-          style={{
-            marginLeft: "1rem",
-            padding: "0.3rem 0.75rem",
-            fontSize: "0.9rem",
-            cursor: "pointer",
-            borderRadius: "6px",
-            border: "1px solid #888",
-            backgroundColor: "#f0f0f0",
-            color: "#333",
-          }}
-          title="Refresh timestamp"
-        >
-          Refresh Time
-        </button>
-      </div>
-
-      <form onSubmit={handleSubmit}>
-        <textarea
-          placeholder="Write your journal entry here..."
-          value={entry}
-          onChange={(e) => setEntry(e.target.value)}
-          style={{
-            width: "100%",
-            height: "150px",
-            fontSize: "1rem",
-            padding: "0.75rem",
-            borderRadius: 8,
-            border: "1px solid #ccc",
-            resize: "vertical",
-            marginBottom: "1rem",
-            fontFamily: "inherit",
-          }}
-          disabled={isRecording}
-        />
-        <div style={{ textAlign: "right" }}>
-          <button
-            type="submit"
-            disabled={isRecording}
-            style={{
-              padding: "0.6rem 1.5rem",
-              fontSize: "1rem",
-              backgroundColor: "#27ae60",
-              color: "white",
-              border: "none",
-              borderRadius: "8px",
-              cursor: isRecording ? "not-allowed" : "pointer",
-              userSelect: "none",
-              fontWeight: "600",
-            }}
-          >
-            Save Entry
-          </button>
-        </div>
-      </form>
-
-      <hr style={{ margin: "2rem 0", borderColor: "#ccc" }} />
-      <h2 style={{ textAlign: "center", marginBottom: "1rem" }}>
-        📅 Journal Calendar
-      </h2>
-
-      <div style={{ display: "flex", justifyContent: "center" }}>
-        <Calendar
-          onChange={(date) => {
-            setSelectedDate(date);
-            // Clear the local entry display when changing dates
-            // (Optional: clear entry input as well)
-            setShowToast(false);
-            setSaveMessage("");
-          }}
-          value={selectedDate}
-          locale="en-US"
-        />
-      </div>
-
-      {/* Local entry for selected date */}
-      {localEntries[formatDateLocal(selectedDate)] && (
-        <div
-          style={{
-            marginTop: "1rem",
-            padding: "1rem",
-            backgroundColor: "#e0ffe0",
-            borderRadius: "8px",
-            border: "1px solid #27ae60",
-          }}
-        >
-          <h3>Local Entry (not yet saved to server) for {formatDateLocal(selectedDate)}:</h3>
-          <p style={{ whiteSpace: "pre-wrap" }}>
-            {localEntries[formatDateLocal(selectedDate)]}
-          </p>
-        </div>
-      )}
-
-      {entriesForDate.length > 0 ? (
-        <div style={{ marginTop: "1rem" }}>
-          <h3>Entries on {formatDateLocal(selectedDate)}:</h3>
-          <ul>
-            {entriesForDate.map((e, idx) => (
-              <li key={idx} style={{ marginBottom: "0.75rem" }}>
-                <strong>{e.time}:</strong> {e.entry}
-              </li>
+      {localEntries[formatDateLocal(selectedDate)]?.length > 0 && (
+        <div style={{ marginTop: "1rem", padding: "1rem", backgroundColor: "#e0ffe0", borderRadius: "8px", border: "1px solid #27ae60" }}>
+          <h3>Journal entry saved!</h3>
+          <ul style={{ paddingLeft: "1.2rem" }}>
+            {localEntries[formatDateLocal(selectedDate)].map((text, idx) => (
+              <li key={idx} style={{ marginBottom: "0.5rem", whiteSpace: "pre-wrap" }}>{text}</li>
             ))}
           </ul>
         </div>
-      ) : (
-        <p style={{ marginTop: "1rem", textAlign: "center" }}>
-          No entries for {formatDateLocal(selectedDate)}.
-        </p>
       )}
+
     </div>
   );
 }
