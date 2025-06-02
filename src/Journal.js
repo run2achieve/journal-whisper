@@ -11,28 +11,20 @@ export default function Journal({ user, onLogout }) {
   const [isRecording, setIsRecording] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
-  const [{ date, time, display }, setDateTime] = useState({
-    date: "",
-    time: "",
-    display: "",
-  });
+  const [currentTimestamp, setCurrentTimestamp] = useState("");
   const [countdown, setCountdown] = useState(0);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const countdownIntervalRef = useRef(null);
 
-  // Generate separate date, time, and display timestamp
-  const generateDateTime = () => {
+  const generateTimestamp = () => {
     const now = new Date();
-    const date = now.toISOString().split("T")[0]; // e.g. "2025-05-16"
-    const time = now.toTimeString().split(" ")[0]; // e.g. "21:06:20"
-    const display = `🕒 ${now.toLocaleString()}`; // for user display
-    return { date, time, display };
+    return `🕒 ${now.toLocaleString()}`;
   };
 
   useEffect(() => {
-    setDateTime(generateDateTime());
+    setCurrentTimestamp(generateTimestamp());
   }, []);
 
   const startRecording = async (durationSeconds) => {
@@ -48,7 +40,7 @@ export default function Journal({ user, onLogout }) {
       audioChunksRef.current = [];
 
       setRecordingDuration(durationSeconds);
-      setDateTime(generateDateTime());
+      setCurrentTimestamp(generateTimestamp());
       setCountdown(durationSeconds);
 
       mediaRecorder.ondataavailable = (event) => {
@@ -132,8 +124,7 @@ export default function Journal({ user, onLogout }) {
     setIsRecording(false);
   };
 
-  // Save to Google Sheet now accepts separate date and time fields
-  const saveToGoogleSheet = async (date, time, text, username) => {
+  const saveToGoogleSheet = async (timestamp, text, username) => {
     const SAVE_API_URL =
       window.location.hostname === "localhost"
         ? "http://localhost:8090/saveEntry"
@@ -143,7 +134,7 @@ export default function Journal({ user, onLogout }) {
       const response = await fetch(SAVE_API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, time, entry: text, user: username }),
+        body: JSON.stringify({ timestamp, entry: text, user: username }),
       });
       if (!response.ok)
         throw new Error("Failed to save entry to Google Sheets");
@@ -162,12 +153,12 @@ export default function Journal({ user, onLogout }) {
       setShowToast(true);
       return;
     }
-    const result = await saveToGoogleSheet(date, time, entry, user);
+    const result = await saveToGoogleSheet(currentTimestamp, entry, user);
     if (result) {
       setSaveMessage("Journal entry saved successfully!");
       setShowToast(true);
       setEntry("");
-      setDateTime(generateDateTime());
+      setCurrentTimestamp(generateTimestamp());
     } else {
       setSaveMessage("Failed to save entry. Please try again.");
       setShowToast(true);
@@ -175,7 +166,7 @@ export default function Journal({ user, onLogout }) {
   };
 
   const handleRefreshTime = () => {
-    setDateTime(generateDateTime());
+    setCurrentTimestamp(generateTimestamp());
     setSaveMessage("");
   };
 
@@ -385,7 +376,7 @@ export default function Journal({ user, onLogout }) {
           fontSize: "1.1rem",
         }}
       >
-        <span>{display}</span>{" "}
+        <span>{currentTimestamp}</span>{" "}
         <button
           onClick={handleRefreshTime}
           style={{
