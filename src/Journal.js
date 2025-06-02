@@ -8,6 +8,14 @@ const PROXY_API_URL =
     ? "http://localhost:8090/transcribeAudio"
     : "https://journal-whisper.onrender.com/transcribeAudio";
 
+// --- New helper function to format date as YYYY-MM-DD in local time ---
+const formatDateLocal = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0"); // months are 0-based
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 export default function Journal({ user, onLogout }) {
   const [entry, setEntry] = useState("");
   const [isRecording, setIsRecording] = useState(false);
@@ -26,11 +34,11 @@ export default function Journal({ user, onLogout }) {
   const audioChunksRef = useRef([]);
   const countdownIntervalRef = useRef(null);
 
-  // === UPDATED: Use ISO date format (YYYY-MM-DD) for consistency ===
+  // === UPDATED: Use local date format for consistency ===
   const generateTimestamp = () => {
     const now = new Date();
     return {
-      date: now.toISOString().split("T")[0], // "2025-06-02"
+      date: formatDateLocal(now), // e.g. "2025-06-02"
       time: now.toLocaleTimeString(),
     };
   };
@@ -51,7 +59,7 @@ export default function Journal({ user, onLogout }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           user,
-          date: dateToFetch.toISOString().split("T")[0],
+          date: formatDateLocal(dateToFetch),
         }),
       });
       if (!response.ok) throw new Error("Failed to fetch entries");
@@ -202,7 +210,6 @@ export default function Journal({ user, onLogout }) {
       setEntry("");
       setCurrentTimestamp(generateTimestamp());
       // Refresh entries after save
-      // IMPORTANT: explicitly fetch entries for the current date again
       fetchEntriesForDate(selectedDate);
     } else {
       setSaveMessage("Failed to save entry. Please try again.");
@@ -456,7 +463,7 @@ export default function Journal({ user, onLogout }) {
 
       {entriesForDate.length > 0 ? (
         <div style={{ marginTop: "1rem" }}>
-          <h3>Entries on {selectedDate.toISOString().split("T")[0]}:</h3>
+          <h3>Entries on {formatDateLocal(selectedDate)}:</h3>
           <ul>
             {entriesForDate.map((e, idx) => (
               <li key={idx} style={{ marginBottom: "0.75rem" }}>
@@ -467,7 +474,7 @@ export default function Journal({ user, onLogout }) {
         </div>
       ) : (
         <p style={{ marginTop: "1rem", textAlign: "center" }}>
-          No entries for {selectedDate.toISOString().split("T")[0]}.
+          No entries for {formatDateLocal(selectedDate)}.
         </p>
       )}
     </div>
