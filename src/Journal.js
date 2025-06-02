@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import logo from "./assets/logo.png"; // Adjust path as needed
+import logo from "./assets/logo.png";
 
 const PROXY_API_URL =
   window.location.hostname === "localhost"
@@ -11,7 +11,7 @@ export default function Journal({ user, onLogout }) {
   const [isRecording, setIsRecording] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
-  const [currentTimestamp, setCurrentTimestamp] = useState("");
+  const [currentTimestamp, setCurrentTimestamp] = useState({ date: "", time: "" });
   const [countdown, setCountdown] = useState(0);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const mediaRecorderRef = useRef(null);
@@ -20,7 +20,10 @@ export default function Journal({ user, onLogout }) {
 
   const generateTimestamp = () => {
     const now = new Date();
-    return `🕒 ${now.toLocaleString()}`;
+    return {
+      date: now.toLocaleDateString(),
+      time: now.toLocaleTimeString(),
+    };
   };
 
   useEffect(() => {
@@ -117,7 +120,7 @@ export default function Journal({ user, onLogout }) {
     setIsRecording(false);
   };
 
-  const saveToGoogleSheet = async (timestamp, text, username) => {
+  const saveToGoogleSheet = async (date, time, text, username) => {
     const SAVE_API_URL =
       window.location.hostname === "localhost"
         ? "http://localhost:8090/saveEntry"
@@ -127,7 +130,7 @@ export default function Journal({ user, onLogout }) {
       const response = await fetch(SAVE_API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ timestamp, entry: text, user: username }),
+        body: JSON.stringify({ date, time, entry: text, user: username }),
       });
       if (!response.ok) throw new Error("Failed to save entry to Google Sheets");
       return await response.json();
@@ -145,7 +148,12 @@ export default function Journal({ user, onLogout }) {
       setShowToast(true);
       return;
     }
-    const result = await saveToGoogleSheet(currentTimestamp, entry, user);
+    const result = await saveToGoogleSheet(
+      currentTimestamp.date,
+      currentTimestamp.time,
+      entry,
+      user
+    );
     if (result) {
       setSaveMessage("Journal entry saved successfully!");
       setShowToast(true);
@@ -257,64 +265,55 @@ export default function Journal({ user, onLogout }) {
           justifyContent: "center",
         }}
       >
-        {[
-          { label: "30s", duration: 30 },
-          { label: "60s", duration: 60 },
-          { label: "180s", duration: 180 },
-        ].map(({ label, duration }) => (
-          <button
-            key={label}
-            onClick={() => {
-              if (isRecording && recordingDuration === duration) {
-                stopRecording();
-              } else if (!isRecording) {
-                startRecording(duration);
-              }
-            }}
-            disabled={isRecording && recordingDuration !== duration}
-            style={{
-              position: "relative",
-              padding: 0,
-              fontSize: "1rem",
-              borderRadius: isRecording && recordingDuration === duration ? 4 : "50%",
-              border: "none",
-              cursor: isRecording && recordingDuration !== duration ? "not-allowed" : "pointer",
-              width: "70px",
-              height: "70px",
-              backgroundColor:
-                isRecording && recordingDuration === duration ? "#FF0000" : "#FFD700",
-              color: "#000",
-              overflow: "hidden",
-              userSelect: "none",
-              fontWeight: "600",
-              boxShadow:
-                isRecording && recordingDuration === duration
-                  ? "0 0 10px #ff4444"
-                  : "none",
-              transition:
-                "background-color 0.3s ease, border-radius 0.3s ease, width 0.3s ease, height 0.3s ease",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              textAlign: "center",
-            }}
-          >
-            {label}
-            {isRecording && recordingDuration === duration && (
-              <div
-                style={{
-                  position: "absolute",
-                  bottom: 0,
-                  left: 0,
-                  height: "6px",
-                  background: "#27ae60",
-                  width: getButtonProgress(),
-                  transition: "width 1s linear",
+        {[{ label: "30s", duration: 30 }, { label: "60s", duration: 60 }, { label: "180s", duration: 180 }].map(
+          ({ label, duration }) => {
+            const isActive = isRecording && recordingDuration === duration;
+            return (
+              <button
+                key={label}
+                onClick={() => {
+                  if (isActive) {
+                    stopRecording();
+                  } else if (!isRecording) {
+                    startRecording(duration);
+                  }
                 }}
-              />
-            )}
-          </button>
-        ))}
+                disabled={isRecording && recordingDuration !== duration}
+                style={{
+                  position: "relative",
+                  height: "60px",
+                  width: "60px",
+                  borderRadius: isActive ? "8px" : "50%",
+                  border: "none",
+                  backgroundColor: isActive ? "#FF0000" : "#FFD700",
+                  color: "#000",
+                  fontSize: "0.9rem",
+                  fontWeight: "bold",
+                  boxShadow: isActive ? "0 0 10px #ff4444" : "none",
+                  cursor: isRecording && recordingDuration !== duration ? "not-allowed" : "pointer",
+                  transition: "all 0.3s ease",
+                  userSelect: "none",
+                }}
+                title={label}
+              >
+                {!isActive && label}
+                {isActive && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      bottom: 0,
+                      left: 0,
+                      height: "6px",
+                      background: "#27ae60",
+                      width: getButtonProgress(),
+                      transition: "width 1s linear",
+                    }}
+                  />
+                )}
+              </button>
+            );
+          }
+        )}
       </div>
 
       {/* Current timestamp display */}
@@ -325,7 +324,9 @@ export default function Journal({ user, onLogout }) {
           fontSize: "1.1rem",
         }}
       >
-        <span>{currentTimestamp}</span>{" "}
+        <span>
+          📅 {currentTimestamp.date} 🕒 {currentTimestamp.time}
+        </span>{" "}
         <button
           onClick={handleRefreshTime}
           style={{
