@@ -20,7 +20,6 @@ export default function Journal({ user, onLogout }) {
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [entriesForDate, setEntriesForDate] = useState([]);
-  // Remove entriesByDate & related fetchAllEntriesByDate since we're not fetching now
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -38,14 +37,84 @@ export default function Journal({ user, onLogout }) {
     setCurrentTimestamp(generateTimestamp());
   }, []);
 
-  // Clear displayed entries when selectedDate changes
   useEffect(() => {
     setEntriesForDate([]);
   }, [selectedDate]);
 
-  // -- Recording logic unchanged, keep your existing startRecording, stopRecording here --
+  // --- Recording logic ---
 
-  // Save entry locally without fetching or posting
+  const startRecording = (durationSeconds = 20) => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setSaveMessage("Audio recording not supported on this browser.");
+      setShowToast(true);
+      return;
+    }
+
+    setIsRecording(true);
+    setRecordingDuration(durationSeconds);
+    setCountdown(durationSeconds);
+    audioChunksRef.current = [];
+
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then((stream) => {
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+
+        mediaRecorder.start();
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = () => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+          const reader = new FileReader();
+          reader.onload = () => {
+            const base64data = reader.result.split(',')[1];
+            // Append audio base64 string to the journal entry text area
+            setEntry((prev) => prev + `\n[audio_base64:${base64data}]`);
+            setIsRecording(false);
+            setCountdown(0);
+            setRecordingDuration(0);
+          };
+          reader.readAsDataURL(audioBlob);
+          stream.getTracks().forEach(track => track.stop());
+        };
+
+        // Countdown timer
+        countdownIntervalRef.current = setInterval(() => {
+          setCountdown(prev => {
+            if (prev <= 1) {
+              clearInterval(countdownIntervalRef.current);
+              mediaRecorder.stop();
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      })
+      .catch((err) => {
+        setSaveMessage("Microphone permission denied or error.");
+        setShowToast(true);
+        setIsRecording(false);
+        setCountdown(0);
+        setRecordingDuration(0);
+      });
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
+    clearInterval(countdownIntervalRef.current);
+    setIsRecording(false);
+    setCountdown(0);
+    setRecordingDuration(0);
+  };
+
+  // Save entry locally
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!entry.trim()) {
@@ -61,9 +130,7 @@ export default function Journal({ user, onLogout }) {
       user,
     };
 
-    // Add entry to local state
     setEntriesForDate((prev) => [...prev, newEntry]);
-
     setSaveMessage("Journal entry saved locally!");
     setShowToast(true);
     setEntry("");
@@ -96,9 +163,6 @@ export default function Journal({ user, onLogout }) {
     const percent = ((recordingDuration - countdown) / recordingDuration) * 100;
     return `${percent}%`;
   };
-
-  // Remove tileClassName logic for calendar highlights for now or keep if you want (no fetch)
-  const tileClassName = () => null;
 
   return (
     <div
@@ -168,7 +232,110 @@ export default function Journal({ user, onLogout }) {
         </div>
       </div>
 
-      {/* Recording buttons unchanged */}
+      {/* Recording Buttons */}
+      <div
+        style={{
+          marginBottom: "1rem",
+          display: "flex",
+          gap: "0.75rem",
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
+        {/* 5-second recording button */}
+        <button
+          onClick={() => startRecording(5)}
+          disabled={isRecording}
+          style={{
+            flex: 1,
+            padding: "0.7rem 0",
+            fontSize: "1rem",
+            backgroundColor: "#007bff",
+            color: "white",
+            border: "none",
+            borderRadius: "8px",
+            cursor: isRecording ? "not-allowed" : "pointer",
+            userSelect: "none",
+            fontWeight: "600",
+            position: "relative",
+          }}
+          aria-label="Record 5 seconds"
+        >
+          {isRecording && recordingDuration === 5 ? (
+            <span
+              style={{
+                position: "absolute",
+                left: 0,
+                bottom: 0,
+                height: "3px",
+                backgroundColor: "yellow",
+                width: getButtonProgress(),
+                borderRadius: "0 0 8px 8px",
+                transition: "width 1s linear",
+              }}
+            />
+          ) : null}
+          Record 5s
+        </button>
+
+        {/* 10-second recording button */}
+        <button
+          onClick={() => startRecording(10)}
+          disabled={isRecording}
+          style={{
+            flex: 1,
+            padding: "0.7rem 0",
+            fontSize: "1rem",
+            backgroundColor: "#28a745",
+            color: "white",
+            border: "none",
+            borderRadius: "8px",
+            cursor: isRecording ? "not-allowed" : "pointer",
+            userSelect: "none",
+            fontWeight: "600",
+            position: "relative",
+          }}
+          aria-label="Record 10 seconds"
+        >
+          {isRecording && recordingDuration === 10 ? (
+            <span
+              style={{
+                position: "absolute",
+                left: 0,
+                bottom: 0,
+                height: "3px",
+                backgroundColor: "yellow",
+                width: getButtonProgress(),
+                borderRadius: "0 0 8px 8px",
+                transition: "width 1s linear",
+              }}
+            />
+          ) : null}
+          Record 10s
+        </button>
+
+        {/* Stop recording button */}
+        <button
+          onClick={stopRecording}
+          disabled={!isRecording}
+          style={{
+            flex: 1,
+            padding: "0.7rem 0",
+            fontSize: "1rem",
+            backgroundColor: "#dc3545",
+            color: "white",
+            border: "none",
+            borderRadius: "8px",
+            cursor: isRecording ? "pointer" : "not-allowed",
+            userSelect: "none",
+            fontWeight: "600",
+          }}
+          aria-label="Stop recording"
+        >
+          Stop
+        </button>
+      </div>
+
       {/* Timestamp */}
       <div
         style={{
@@ -247,7 +414,6 @@ export default function Journal({ user, onLogout }) {
           onChange={setSelectedDate}
           value={selectedDate}
           locale="en-US"
-          tileClassName={tileClassName}
         />
       </div>
 
