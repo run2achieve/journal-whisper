@@ -39,32 +39,31 @@ export default function Journal({ user, onLogout }) {
     setCurrentTimestamp(generateTimestamp());
   }, []);
 
+  const fetchEntriesForDate = async (dateToFetch) => {
+    const FETCH_API_URL =
+      window.location.hostname === "localhost"
+        ? "http://localhost:8090/getEntries"
+        : "https://journal-whisper.onrender.com/getEntries";
+
+    try {
+      const response = await fetch(FETCH_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user,
+          date: dateToFetch.toISOString().split("T")[0],
+        }),
+      });
+      if (!response.ok) throw new Error("Failed to fetch entries");
+      const data = await response.json();
+      setEntriesForDate(data.entries || []);
+    } catch (err) {
+      setEntriesForDate([]);
+    }
+  };
+
   useEffect(() => {
-    const fetchEntriesForDate = async () => {
-      const FETCH_API_URL =
-        window.location.hostname === "localhost"
-          ? "http://localhost:8090/getEntries"
-          : "https://journal-whisper.onrender.com/getEntries";
-
-      try {
-        // === UPDATED: send date as ISO string ===
-        const response = await fetch(FETCH_API_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            user,
-            date: selectedDate.toISOString().split("T")[0],
-          }),
-        });
-        if (!response.ok) throw new Error("Failed to fetch entries");
-        const data = await response.json();
-        setEntriesForDate(data.entries || []);
-      } catch (err) {
-        setEntriesForDate([]);
-      }
-    };
-
-    fetchEntriesForDate();
+    fetchEntriesForDate(selectedDate);
   }, [selectedDate, user]);
 
   const startRecording = async (durationSeconds) => {
@@ -203,7 +202,8 @@ export default function Journal({ user, onLogout }) {
       setEntry("");
       setCurrentTimestamp(generateTimestamp());
       // Refresh entries after save
-      setSelectedDate(new Date(currentTimestamp.date));
+      // IMPORTANT: explicitly fetch entries for the current date again
+      fetchEntriesForDate(selectedDate);
     } else {
       setSaveMessage("Failed to save entry. Please try again.");
       setShowToast(true);
