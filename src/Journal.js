@@ -26,10 +26,11 @@ export default function Journal({ user, onLogout }) {
   const audioChunksRef = useRef([]);
   const countdownIntervalRef = useRef(null);
 
+  // === UPDATED: Use ISO date format (YYYY-MM-DD) for consistency ===
   const generateTimestamp = () => {
     const now = new Date();
     return {
-      date: now.toLocaleDateString(),
+      date: now.toISOString().split("T")[0], // "2025-06-02"
       time: now.toLocaleTimeString(),
     };
   };
@@ -46,12 +47,13 @@ export default function Journal({ user, onLogout }) {
           : "https://journal-whisper.onrender.com/getEntries";
 
       try {
+        // === UPDATED: send date as ISO string ===
         const response = await fetch(FETCH_API_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             user,
-            date: selectedDate.toLocaleDateString(),
+            date: selectedDate.toISOString().split("T")[0],
           }),
         });
         if (!response.ok) throw new Error("Failed to fetch entries");
@@ -200,6 +202,8 @@ export default function Journal({ user, onLogout }) {
       setShowToast(true);
       setEntry("");
       setCurrentTimestamp(generateTimestamp());
+      // Refresh entries after save
+      setSelectedDate(new Date(currentTimestamp.date));
     } else {
       setSaveMessage("Failed to save entry. Please try again.");
       setShowToast(true);
@@ -452,7 +456,7 @@ export default function Journal({ user, onLogout }) {
 
       {entriesForDate.length > 0 ? (
         <div style={{ marginTop: "1rem" }}>
-          <h3>Entries on {selectedDate.toLocaleDateString()}:</h3>
+          <h3>Entries on {selectedDate.toISOString().split("T")[0]}:</h3>
           <ul>
             {entriesForDate.map((e, idx) => (
               <li key={idx} style={{ marginBottom: "0.75rem" }}>
@@ -463,7 +467,7 @@ export default function Journal({ user, onLogout }) {
         </div>
       ) : (
         <p style={{ marginTop: "1rem", textAlign: "center" }}>
-          No entries for {selectedDate.toLocaleDateString()}.
+          No entries for {selectedDate.toISOString().split("T")[0]}.
         </p>
       )}
     </div>
