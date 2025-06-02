@@ -85,16 +85,16 @@ app.post("/transcribeAudio", upload.single("file"), async (req, res) => {
 // Endpoint to save journal entry to Google Sheets
 app.post("/saveEntry", async (req, res) => {
   try {
-    const { timestamp, entry, user } = req.body;
+    const { date, time, entry, user } = req.body;
 
-    if (!timestamp || !entry || !user) {
-      return res.status(400).json({ error: "Missing timestamp, entry, or user in request body." });
+    if (!date || !time || !entry || !user) {
+      return res.status(400).json({ error: "Missing date, time, entry, or user in request body." });
     }
 
     const response = await fetch(GOOGLE_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ timestamp, entry, user }),
+      body: JSON.stringify({ date, time, entry, user }),
     });
 
     if (!response.ok) {
