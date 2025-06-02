@@ -20,7 +20,7 @@ export default function Journal({ user, onLogout }) {
 
   const generateTimestamp = () => {
     const now = new Date();
-    return 🕒 ${now.toLocaleString()};
+    return `🕒 ${now.toLocaleString()}`;
   };
 
   useEffect(() => {
@@ -83,7 +83,7 @@ export default function Journal({ user, onLogout }) {
           });
 
           if (!response.ok) {
-            throw new Error(Transcription failed: ${response.statusText});
+            throw new Error(`Transcription failed: ${response.statusText}`);
           }
 
           const data = await response.json();
@@ -181,7 +181,7 @@ export default function Journal({ user, onLogout }) {
   const getButtonProgress = () => {
     if (recordingDuration === 0) return "0%";
     const percent = ((recordingDuration - countdown) / recordingDuration) * 100;
-    return ${percent}%;
+    return `${percent}%`;
   };
 
   return (
@@ -381,5 +381,3 @@ export default function Journal({ user, onLogout }) {
     </div>
   );
 }
-
-
