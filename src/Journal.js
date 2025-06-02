@@ -28,6 +28,7 @@ export default function Journal({ user, onLogout }) {
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [entriesForDate, setEntriesForDate] = useState([]);
+  const [entriesByDate, setEntriesByDate] = useState({}); // For calendar highlights
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -45,6 +46,7 @@ export default function Journal({ user, onLogout }) {
     setCurrentTimestamp(generateTimestamp());
   }, []);
 
+  // Fetch entries for a specific date
   const fetchEntriesForDate = async (dateToFetch) => {
     const FETCH_API_URL =
       window.location.hostname === "localhost"
@@ -68,9 +70,46 @@ export default function Journal({ user, onLogout }) {
     }
   };
 
+  // Fetch all entries for user (for calendar highlights)
+  const fetchAllEntriesByDate = async () => {
+    const FETCH_API_URL =
+      window.location.hostname === "localhost"
+        ? "http://localhost:8090/getAllEntriesByUser"
+        : "https://journal-whisper.onrender.com/getAllEntriesByUser";
+
+    try {
+      const response = await fetch(FETCH_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user }),
+      });
+      if (!response.ok) throw new Error("Failed to fetch all entries");
+      const data = await response.json();
+
+      // Data assumed to be array of entries: { date, time, entry }
+      // Organize by date for easy lookup
+      const byDate = {};
+      (data.entries || []).forEach(({ date }) => {
+        if (!byDate[date]) byDate[date] = true; // Just need existence for highlights
+      });
+      setEntriesByDate(byDate);
+    } catch (err) {
+      setEntriesByDate({});
+    }
+  };
+
   useEffect(() => {
     fetchEntriesForDate(selectedDate);
   }, [selectedDate, user]);
+
+  useEffect(() => {
+    if (user) {
+      fetchAllEntriesByDate();
+    }
+  }, [user]);
+
+  // Recording logic unchanged...
+  // (Copy your existing startRecording, stopRecording, saveToGoogleSheet, handleSubmit, handleRefreshTime, and cleanup code here)
 
   const startRecording = async (durationSeconds) => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -211,6 +250,7 @@ export default function Journal({ user, onLogout }) {
       const savedDate = new Date(currentTimestamp.date + "T00:00:00");
       setSelectedDate(savedDate);
       fetchEntriesForDate(savedDate);
+      fetchAllEntriesByDate(); // refresh calendar highlights
     } else {
       setSaveMessage("Failed to save entry. Please try again.");
       setShowToast(true);
@@ -245,6 +285,17 @@ export default function Journal({ user, onLogout }) {
     if (recordingDuration === 0) return "0%";
     const percent = ((recordingDuration - countdown) / recordingDuration) * 100;
     return `${percent}%`;
+  };
+
+  // Custom calendar tile class for highlighting dates with entries
+  const tileClassName = ({ date, view }) => {
+    if (view === "month") {
+      const dateStr = formatDateLocal(date);
+      if (entriesByDate[dateStr]) {
+        return "highlighted-date"; // class to add styling
+      }
+    }
+    return null;
   };
 
   return (
@@ -459,25 +510,65 @@ export default function Journal({ user, onLogout }) {
           onChange={setSelectedDate}
           value={selectedDate}
           locale="en-US"
+          tileClassName={tileClassName}
         />
       </div>
 
       {entriesForDate.length > 0 ? (
         <div style={{ marginTop: "1rem" }}>
           <h3>Entries on {formatDateLocal(selectedDate)}:</h3>
-          <ul>
+          <ul style={{ listStyle: "none", paddingLeft: 0 }}>
             {entriesForDate.map((e, idx) => (
-              <li key={idx} style={{ marginBottom: "0.75rem" }}>
-                <strong>{e.time}:</strong> {e.entry}
+              <li
+                key={idx}
+                style={{
+                  backgroundColor: "#fff",
+                  borderRadius: "8px",
+                  padding: "0.75rem 1rem",
+                  marginBottom: "0.75rem",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight: "bold",
+                    fontSize: "0.95rem",
+                    marginBottom: "0.25rem",
+                    color: "#555",
+                  }}
+                >
+                  {e.date} {e.time}
+                </div>
+                <div style={{ fontSize: "1rem", color: "#222" }}>{e.entry}</div>
               </li>
             ))}
           </ul>
         </div>
       ) : (
-        <p style={{ marginTop: "1rem", textAlign: "center" }}>
-          No entries for {formatDateLocal(selectedDate)}.
+        <p style={{ textAlign: "center", marginTop: "1rem", color: "#777" }}>
+          No entries for this date.
         </p>
       )}
+
+      <footer style={{ marginTop: "3rem", textAlign: "center", color: "#aaa" }}>
+        © 2025 My Journal App
+      </footer>
+
+      <style>{`
+        /* Highlight style for calendar dates with entries */
+        .highlighted-date {
+          background-color: #ffeb3b !important;
+          border-radius: 50% !important;
+          color: black !important;
+          font-weight: 600;
+        }
+        /* Hover effect for highlighted dates */
+        .highlighted-date:hover {
+          background-color: #fbc02d !important;
+          color: black !important;
+        }
+      `}</style>
     </div>
   );
 }
