@@ -20,7 +20,7 @@ export default function Journal({ user, onLogout }) {
 
   const generateTimestamp = () => {
     const now = new Date();
-    return `🕒 ${now.toLocaleString()}`;
+    return 🕒 ${now.toLocaleString()};
   };
 
   useEffect(() => {
@@ -71,9 +71,7 @@ export default function Journal({ user, onLogout }) {
         setRecordingDuration(0);
         setSaveMessage("");
 
-        const audioBlob = new Blob(audioChunksRef.current, {
-          type: "audio/webm",
-        });
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
         try {
           const formData = new FormData();
           formData.append("file", audioBlob, "recording.webm");
@@ -85,16 +83,14 @@ export default function Journal({ user, onLogout }) {
           });
 
           if (!response.ok) {
-            throw new Error(`Transcription failed: ${response.statusText}`);
+            throw new Error(Transcription failed: ${response.statusText});
           }
 
           const data = await response.json();
 
           if (data.transcription) {
             setEntry(data.transcription);
-            setSaveMessage(
-              "Transcription received. Please review and save manually."
-            );
+            setSaveMessage("Transcription received. Please review and save manually.");
             setShowToast(true);
           } else {
             setSaveMessage("No transcription received.");
@@ -114,10 +110,7 @@ export default function Journal({ user, onLogout }) {
   };
 
   const stopRecording = () => {
-    if (
-      mediaRecorderRef.current &&
-      mediaRecorderRef.current.state !== "inactive"
-    ) {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
     }
     clearInterval(countdownIntervalRef.current);
@@ -136,8 +129,7 @@ export default function Journal({ user, onLogout }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ timestamp, entry: text, user: username }),
       });
-      if (!response.ok)
-        throw new Error("Failed to save entry to Google Sheets");
+      if (!response.ok) throw new Error("Failed to save entry to Google Sheets");
       return await response.json();
     } catch (error) {
       setSaveMessage("Error saving to Google Sheets: " + error.message);
@@ -172,10 +164,7 @@ export default function Journal({ user, onLogout }) {
 
   useEffect(() => {
     return () => {
-      if (
-        mediaRecorderRef.current &&
-        mediaRecorderRef.current.state !== "inactive"
-      ) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
         mediaRecorderRef.current.stop();
       }
       clearInterval(countdownIntervalRef.current);
@@ -192,7 +181,7 @@ export default function Journal({ user, onLogout }) {
   const getButtonProgress = () => {
     if (recordingDuration === 0) return "0%";
     const percent = ((recordingDuration - countdown) / recordingDuration) * 100;
-    return `${percent}%`;
+    return ${percent}%;
   };
 
   return (
@@ -207,25 +196,6 @@ export default function Journal({ user, onLogout }) {
         color: "#222",
       }}
     >
-      <style>
-        {`
-          @keyframes pulse {
-            0% {
-              box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.7);
-            }
-            70% {
-              box-shadow: 0 0 0 10px rgba(255, 59, 48, 0);
-            }
-            100% {
-              box-shadow: 0 0 0 0 rgba(255, 59, 48, 0);
-            }
-          }
-          .pulse {
-            animation: pulse 1.5s infinite;
-          }
-        `}
-      </style>
-
       {showToast && saveMessage && (
         <div
           style={{
@@ -257,11 +227,7 @@ export default function Journal({ user, onLogout }) {
           marginBottom: "1rem",
         }}
       >
-        <img
-          src={logo}
-          alt="My Logo"
-          style={{ maxWidth: "150px", height: "auto" }}
-        />
+        <img src={logo} alt="My Logo" style={{ maxWidth: "150px", height: "auto" }} />
         <div>
           <strong>User:</strong> {user}
           <button
@@ -272,8 +238,8 @@ export default function Journal({ user, onLogout }) {
               fontSize: "1rem",
               cursor: "pointer",
               borderRadius: "6px",
-              border: "1px solid #ccc",
-              backgroundColor: "#f2f2f2",
+              border: "1px solid #888",
+              backgroundColor: "#f0f0f0",
               color: "#333",
             }}
           >
@@ -286,8 +252,8 @@ export default function Journal({ user, onLogout }) {
       <div
         style={{
           display: "flex",
-          gap: "1.5rem",
-          marginBottom: "2rem",
+          gap: "1rem",
+          marginBottom: "1rem",
           justifyContent: "center",
         }}
       >
@@ -295,77 +261,54 @@ export default function Journal({ user, onLogout }) {
           { label: "30s", duration: 30 },
           { label: "60s", duration: 60 },
           { label: "180s", duration: 180 },
-        ].map(({ label, duration }) => {
-          const isActive = isRecording && recordingDuration === duration;
-          return (
-            <button
-              key={label}
-              className={isActive ? "pulse" : ""}
-              onClick={() => {
-                if (isActive) {
-                  stopRecording();
-                } else if (!isRecording) {
-                  startRecording(duration);
-                }
-              }}
-              disabled={isRecording && !isActive}
-              style={{
-                position: "relative",
-                height: "70px",
-                width: "70px",
-                borderRadius: isActive ? "10%" : "50%",
-                border: "4px solid #444",
-                backgroundColor: isActive ? "#FF3B30" : "#FFD700",
-                color: "#000",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                cursor: isRecording && !isActive ? "not-allowed" : "pointer",
-                boxShadow: isActive
-                  ? "0 0 12px #FF3B30"
-                  : "0 2px 6px rgba(0,0,0,0.2)",
-                transition: "all 0.3s ease",
-              }}
-              title={`Record for ${label}`}
-            >
-              <span
-                style={{
-                  position: "absolute",
-                  bottom: "-1.5rem",
-                  fontSize: "0.9rem",
-                  fontWeight: "bold",
-                  color: "#333",
-                }}
-              >
-                {label}
-              </span>
-              {isActive && (
-                <div
-                  style={{
-                    position: "absolute",
-                    bottom: 0,
-                    left: 0,
-                    height: "6px",
-                    background: "#27ae60",
-                    width: getButtonProgress(),
-                    transition: "width 1s linear",
-                    borderBottomLeftRadius: "8px",
-                    borderBottomRightRadius: "8px",
-                  }}
-                />
-              )}
+        ].map(({ label, duration }) => (
+          <button
+            key={label}
+            onClick={() => {
+              if (isRecording && recordingDuration === duration) {
+                stopRecording();
+              } else if (!isRecording) {
+                startRecording(duration);
+              }
+            }}
+            disabled={isRecording && recordingDuration !== duration}
+            style={{
+              position: "relative",
+              padding: "1rem",
+              fontSize: "1rem",
+              borderRadius: 8,
+              border: "none",
+              cursor: isRecording && recordingDuration !== duration ? "not-allowed" : "pointer",
+              width: "220px",
+              backgroundColor:
+                isRecording && recordingDuration === duration ? "#FF0000" : "#FFD700",
+              color: "#000",
+              overflow: "hidden",
+              userSelect: "none",
+              fontWeight: "600",
+              boxShadow:
+                isRecording && recordingDuration === duration
+                  ? "0 0 10px #ff4444"
+                  : "none",
+              transition: "background-color 0.3s ease",
+            }}
+          >
+            {label}
+            {isRecording && recordingDuration === duration && (
               <div
                 style={{
-                  width: isActive ? "20px" : "14px",
-                  height: isActive ? "20px" : "14px",
-                  backgroundColor: "#fff",
-                  borderRadius: isActive ? "4px" : "50%",
-                  transition: "all 0.2s ease-in-out",
+                  position: "absolute",
+                  bottom: 0,
+                  left: 0,
+                  height: "6px",
+                  background: "#27ae60",
+                  width: getButtonProgress(),
+                  transition: "width 1s linear",
                 }}
               />
-            </button>
-          );
-        })}
+            )}
+          </button>
+        ))}
       </div>
 
       {/* Current timestamp display */}
@@ -385,8 +328,8 @@ export default function Journal({ user, onLogout }) {
             fontSize: "0.9rem",
             cursor: "pointer",
             borderRadius: "6px",
-            border: "1px solid #ccc",
-            backgroundColor: "#f2f2f2",
+            border: "1px solid #888",
+            backgroundColor: "#f0f0f0",
             color: "#333",
           }}
           title="Refresh timestamp"
@@ -438,3 +381,5 @@ export default function Journal({ user, onLogout }) {
     </div>
   );
 }
+
+
