@@ -117,6 +117,37 @@ app.post("/saveEntry", async (req, res) => {
   }
 });
 
+// NEW: Endpoint to get entries from Google Sheets by user and date
+app.post("/getEntries", async (req, res) => {
+  try {
+    const { user, date } = req.body;
+
+    if (!user || !date) {
+      return res.status(400).json({ error: "Missing user or date in request body." });
+    }
+
+    // Send a request to the Google Script with an action flag to fetch entries
+    const response = await fetch(GOOGLE_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user, date, action: "getEntries" }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Google Sheets API error:", errorText);
+      return res.status(500).json({ error: "Failed to fetch entries from Google Sheets." });
+    }
+
+    const data = await response.json();
+    // Assuming Google Script returns entries array in 'entries' key
+    res.json({ entries: data.entries || [] });
+  } catch (error) {
+    console.error("Error in /getEntries:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Catch-all handler to serve React app for all other routes (supports React Router)
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "../build/index.html"));
