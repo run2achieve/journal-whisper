@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import Calendar from "react-calendar";
-import 'react-calendar/dist/Calendar.css';
+import "react-calendar/dist/Calendar.css";
 import logo from "./assets/logo.png";
 
 const PROXY_API_URL =
@@ -86,11 +86,9 @@ export default function Journal({ user, onLogout }) {
       if (!response.ok) throw new Error("Failed to fetch all entries");
       const data = await response.json();
 
-      // Data assumed to be array of entries: { date, time, entry }
-      // Organize by date for easy lookup
       const byDate = {};
       (data.entries || []).forEach(({ date }) => {
-        if (!byDate[date]) byDate[date] = true; // Just need existence for highlights
+        if (!byDate[date]) byDate[date] = true; // existence flag for highlights
       });
       setEntriesByDate(byDate);
     } catch (err) {
@@ -108,9 +106,7 @@ export default function Journal({ user, onLogout }) {
     }
   }, [user]);
 
-  // Recording logic unchanged...
-  // (Copy your existing startRecording, stopRecording, saveToGoogleSheet, handleSubmit, handleRefreshTime, and cleanup code here)
-
+  // Recording logic
   const startRecording = async (durationSeconds) => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setSaveMessage("Audio recording not supported in this browser.");
@@ -419,11 +415,11 @@ export default function Journal({ user, onLogout }) {
                     position: "absolute",
                     bottom: 0,
                     left: 0,
-                    height: "8px",            // increased height
+                    height: "8px",
                     background: "#27ae60",
                     width: getButtonProgress(),
-                    transition: "width 0.3s ease", // smoother transition
-                    borderRadius: "0 0 8px 8px", // rounded bottom corners
+                    transition: "width 0.3s ease",
+                    borderRadius: "0 0 8px 8px",
                   }}
                 />
               )}
@@ -479,94 +475,81 @@ export default function Journal({ user, onLogout }) {
           }}
           disabled={isRecording}
         />
-        <div style={{ textAlign: "right" }}>
-          <button
-            type="submit"
-            disabled={isRecording}
-            style={{
-              padding: "0.6rem 1.5rem",
-              fontSize: "1rem",
-              backgroundColor: "#27ae60",
-              color: "white",
-              border: "none",
-              borderRadius: "8px",
-              cursor: isRecording ? "not-allowed" : "pointer",
-              userSelect: "none",
-              fontWeight: "600",
-            }}
-          >
-            Save Entry
-          </button>
-        </div>
+        <button
+          type="submit"
+          style={{
+            width: "100%",
+            padding: "0.75rem",
+            backgroundColor: "#4CAF50",
+            color: "white",
+            fontSize: "1.1rem",
+            borderRadius: "8px",
+            border: "none",
+            cursor: "pointer",
+            userSelect: "none",
+          }}
+          disabled={isRecording}
+        >
+          Save Entry
+        </button>
       </form>
 
-      <hr style={{ margin: "2rem 0", borderColor: "#ccc" }} />
-      <h2 style={{ textAlign: "center", marginBottom: "1rem" }}>
-        📅 Journal Calendar
-      </h2>
+      <h3 style={{ marginTop: "2rem" }}>
+        Journal Entries for {formatDateLocal(selectedDate)}
+      </h3>
 
-      <div style={{ display: "flex", justifyContent: "center" }}>
-        <Calendar
-          onChange={setSelectedDate}
-          value={selectedDate}
-          locale="en-US"
-          tileClassName={tileClassName}
-        />
-      </div>
+      <ul
+        style={{
+          listStyleType: "none",
+          paddingLeft: 0,
+          maxHeight: "200px",
+          overflowY: "auto",
+          border: "1px solid #ccc",
+          borderRadius: "8px",
+          backgroundColor: "#f9f9f9",
+        }}
+      >
+        {entriesForDate.length === 0 && (
+          <li style={{ padding: "0.5rem", color: "#666" }}>
+            No entries for this date.
+          </li>
+        )}
+        {entriesForDate.map(({ time, entry }, index) => (
+          <li
+            key={index}
+            style={{
+              padding: "0.5rem",
+              borderBottom: "1px solid #ddd",
+              whiteSpace: "pre-wrap",
+              fontSize: "0.9rem",
+              color: "#333",
+            }}
+          >
+            <strong>{time}:</strong> {entry}
+          </li>
+        ))}
+      </ul>
 
-      {entriesForDate.length > 0 ? (
-        <div style={{ marginTop: "1rem" }}>
-          <h3>Entries on {formatDateLocal(selectedDate)}:</h3>
-          <ul style={{ listStyle: "none", paddingLeft: 0 }}>
-            {entriesForDate.map((e, idx) => (
-              <li
-                key={idx}
-                style={{
-                  backgroundColor: "#fff",
-                  borderRadius: "8px",
-                  padding: "0.75rem 1rem",
-                  marginBottom: "0.75rem",
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-                  whiteSpace: "pre-wrap",
-                }}
-              >
-                <div
-                  style={{
-                    fontWeight: "bold",
-                    fontSize: "0.95rem",
-                    marginBottom: "0.25rem",
-                    color: "#555",
-                  }}
-                >
-                  {e.date} {e.time}
-                </div>
-                <div style={{ fontSize: "1rem", color: "#222" }}>{e.entry}</div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : (
-        <p style={{ textAlign: "center", marginTop: "1rem", color: "#777" }}>
-          No entries for this date.
-        </p>
-      )}
+      <h3 style={{ marginTop: "2rem" }}>Select Date</h3>
 
-      <footer style={{ marginTop: "3rem", textAlign: "center", color: "#aaa" }}>
-        © 2025 My Journal App
-      </footer>
+      <Calendar
+        value={selectedDate}
+        onChange={setSelectedDate}
+        tileClassName={tileClassName}
+        calendarType="US"
+        next2Label={null}
+        prev2Label={null}
+      />
 
       <style>{`
-        /* Highlight style for calendar dates with entries */
         .highlighted-date {
-          background-color: #ffeb3b !important;
-          border-radius: 50% !important;
+          background: #FFD700 !important;
           color: black !important;
-          font-weight: 600;
+          border-radius: 50%;
         }
-        /* Hover effect for highlighted dates */
-        .highlighted-date:hover {
-          background-color: #fbc02d !important;
-          color: black !important;
+        button:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
         }
       `}</style>
     </div>
