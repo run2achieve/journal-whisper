@@ -8,10 +8,9 @@ const PROXY_API_URL =
     ? "http://localhost:8090/transcribeAudio"
     : "https://journal-whisper.onrender.com/transcribeAudio";
 
-// --- New helper function to format date as YYYY-MM-DD in local time ---
 const formatDateLocal = (date) => {
   const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0"); // months are 0-based
+  const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 };
@@ -34,11 +33,10 @@ export default function Journal({ user, onLogout }) {
   const audioChunksRef = useRef([]);
   const countdownIntervalRef = useRef(null);
 
-  // === UPDATED: Use local date format for consistency ===
   const generateTimestamp = () => {
     const now = new Date();
     return {
-      date: formatDateLocal(now), // e.g. "2025-06-02"
+      date: formatDateLocal(now),
       time: now.toLocaleTimeString(),
     };
   };
@@ -210,7 +208,6 @@ export default function Journal({ user, onLogout }) {
       setEntry("");
       setCurrentTimestamp(generateTimestamp());
 
-      // Update selectedDate and fetch entries for that date to refresh view
       const savedDate = new Date(currentTimestamp.date + "T00:00:00");
       setSelectedDate(savedDate);
       fetchEntriesForDate(savedDate);
@@ -371,10 +368,11 @@ export default function Journal({ user, onLogout }) {
                     position: "absolute",
                     bottom: 0,
                     left: 0,
-                    height: "6px",
+                    height: "8px",            // increased height
                     background: "#27ae60",
                     width: getButtonProgress(),
-                    transition: "width 1s linear",
+                    transition: "width 0.3s ease", // smoother transition
+                    borderRadius: "0 0 8px 8px", // rounded bottom corners
                   }}
                 />
               )}
