@@ -30,6 +30,8 @@ export default function Journal({ user, onLogout }) {
   const [entriesForDate, setEntriesForDate] = useState([]);
   const [localEntries, setLocalEntries] = useState({});
   const [saveAnimating, setSaveAnimating] = useState(false);
+  const [savedEntry, setSavedEntry] = useState(null); // New state for saved entry display
+  const [saveClickAnimating, setSaveClickAnimating] = useState(false); // for click animation
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -201,6 +203,11 @@ export default function Journal({ user, onLogout }) {
       setShowToast(true);
       return;
     }
+
+    // Animate click: scale down quickly then back up
+    setSaveClickAnimating(true);
+    setTimeout(() => setSaveClickAnimating(false), 150);
+
     const result = await saveToGoogleSheet(
       currentTimestamp.date,
       currentTimestamp.time,
@@ -212,6 +219,14 @@ export default function Journal({ user, onLogout }) {
       setTimeout(() => setSaveAnimating(false), 500);
       setSaveMessage("Journal entry saved successfully!");
       setShowToast(true);
+
+      // Set the saved entry to display immediately below the calendar
+      setSavedEntry({
+        date: currentTimestamp.date,
+        time: currentTimestamp.time,
+        entry: entry,
+      });
+
       setEntry("");
       setCurrentTimestamp(generateTimestamp());
 
@@ -448,8 +463,12 @@ export default function Journal({ user, onLogout }) {
               padding: "0.6rem 1.5rem",
               fontSize: "1rem",
               backgroundColor: saveAnimating ? "#2ecc71" : "#27ae60",
-              transform: saveAnimating ? "scale(1.05)" : "scale(1)",
-              transition: "all 0.3s ease",
+              transform: saveAnimating
+                ? "scale(1.05)"
+                : saveClickAnimating
+                ? "scale(0.95)"
+                : "scale(1)",
+              transition: "transform 0.15s ease",
               color: "white",
               border: "none",
               borderRadius: "8px",
@@ -500,21 +519,71 @@ export default function Journal({ user, onLogout }) {
         </div>
       )}
 
-      {entriesForDate.length > 0 ? (
-        <div style={{ marginTop: "1rem" }}>
-          <h3>Entries on {formatDateLocal(selectedDate)}:</h3>
-          <ul>
-            {entriesForDate.map((e, idx) => (
-              <li key={idx} style={{ marginBottom: "0.75rem" }}>
-                <strong>{e.time}:</strong> {e.entry}
-              </li>
-            ))}
-          </ul>
+      {entriesForDate.length > 0 && (
+        <div
+          style={{
+            marginTop: "1rem",
+            padding: "1rem",
+            backgroundColor: "#f9f9f9",
+            borderRadius: "8px",
+            border: "1px solid #ccc",
+          }}
+        >
+          <h3>Saved Entries for {formatDateLocal(selectedDate)}:</h3>
+          {entriesForDate.map(({ time, entry }, index) => (
+            <div
+              key={index}
+              style={{
+                marginBottom: "1rem",
+                borderBottom: "1px solid #ddd",
+                paddingBottom: "0.5rem",
+              }}
+            >
+              <div
+                style={{
+                  fontWeight: "bold",
+                  fontSize: "0.9rem",
+                  marginBottom: "0.25rem",
+                  color: "#555",
+                }}
+              >
+                {time}
+              </div>
+              <div style={{ whiteSpace: "pre-wrap" }}>{entry}</div>
+            </div>
+          ))}
         </div>
-      ) : (
-        <p style={{ marginTop: "1rem", fontStyle: "italic", textAlign: "center" }}>
-          No entries found for {formatDateLocal(selectedDate)}.
-        </p>
+      )}
+
+      {/* Display saved entry immediately below the calendar */}
+      {savedEntry && (
+        <div
+          style={{
+            marginTop: "2rem",
+            padding: "1rem",
+            backgroundColor: "#d0f0ff",
+            borderRadius: "8px",
+            border: "1px solid #3399ff",
+            maxWidth: 600,
+            marginLeft: "auto",
+            marginRight: "auto",
+          }}
+          aria-live="polite"
+        >
+          <div
+            style={{
+              fontWeight: "bold",
+              fontSize: "1rem",
+              marginBottom: "0.25rem",
+              color: "#0066cc",
+            }}
+          >
+            {savedEntry.date} {savedEntry.time}
+          </div>
+          <div style={{ whiteSpace: "pre-wrap", fontSize: "1rem" }}>
+            {savedEntry.entry}
+          </div>
+        </div>
       )}
     </div>
   );
