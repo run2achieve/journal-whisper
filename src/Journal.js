@@ -499,25 +499,6 @@ export default function Journal({ user, onLogout }) {
         />
       </div>
 
-      {localEntries[formatDateLocal(selectedDate)] && (
-        <div
-          style={{
-            marginTop: "1rem",
-            padding: "1rem",
-            backgroundColor: "#e0ffe0",
-            borderRadius: "8px",
-            border: "1px solid #27ae60",
-          }}
-        >
-          <h3>
-            Local Entry (not yet saved to server) for{" "}
-            {formatDateLocal(selectedDate)}:
-          </h3>
-          <p style={{ whiteSpace: "pre-wrap" }}>
-            {localEntries[formatDateLocal(selectedDate)]}
-          </p>
-        </div>
-      )}
 
       {entriesForDate.length > 0 && (
         <div
