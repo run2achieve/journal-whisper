@@ -30,8 +30,7 @@ export default function Journal({ user, onLogout }) {
   const [entriesForDate, setEntriesForDate] = useState([]);
   const [localEntries, setLocalEntries] = useState({});
   const [saveAnimating, setSaveAnimating] = useState(false);
-  const [savedEntry, setSavedEntry] = useState(null); // New state for saved entry display
-  const [saveClickAnimating, setSaveClickAnimating] = useState(false); // for click animation
+  const [saveClickAnimating, setSaveClickAnimating] = useState(false);
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -66,7 +65,16 @@ export default function Journal({ user, onLogout }) {
       });
       if (!response.ok) throw new Error("Failed to fetch entries");
       const data = await response.json();
-      setEntriesForDate(data.entries || []);
+      
+      // Sort entries by time in descending order (most recent first)
+      const sortedEntries = (data.entries || []).sort((a, b) => {
+        // Convert time strings to comparable format
+        const timeA = new Date(`1970-01-01 ${a.time}`);
+        const timeB = new Date(`1970-01-01 ${b.time}`);
+        return timeB - timeA; // Descending order
+      });
+      
+      setEntriesForDate(sortedEntries);
     } catch (err) {
       setEntriesForDate([]);
     }
@@ -220,19 +228,19 @@ export default function Journal({ user, onLogout }) {
       setSaveMessage("Journal entry saved successfully!");
       setShowToast(true);
 
-      // Set the saved entry to display immediately below the calendar
-      setSavedEntry({
-        date: currentTimestamp.date,
+      // Add the new entry to the current entries list at the top (most recent first)
+      const newEntry = {
         time: currentTimestamp.time,
         entry: entry,
-      });
+      };
+      
+      setEntriesForDate(prevEntries => [newEntry, ...prevEntries]);
 
       setEntry("");
       setCurrentTimestamp(generateTimestamp());
 
       const savedDate = new Date(currentTimestamp.date + "T00:00:00");
       setSelectedDate(savedDate);
-      fetchEntriesForDate(savedDate);
 
       setLocalEntries((prev) => ({
         ...prev,
@@ -499,7 +507,6 @@ export default function Journal({ user, onLogout }) {
         />
       </div>
 
-
       {entriesForDate.length > 0 && (
         <div
           style={{
@@ -510,13 +517,13 @@ export default function Journal({ user, onLogout }) {
             border: "1px solid #ccc",
           }}
         >
-          <h3>Saved Entries for {formatDateLocal(selectedDate)}:</h3>
+          <h3>Entries for {formatDateLocal(selectedDate)} (Most Recent First):</h3>
           {entriesForDate.map(({ time, entry }, index) => (
             <div
-              key={index}
+              key={`${time}-${index}`}
               style={{
                 marginBottom: "1rem",
-                borderBottom: "1px solid #ddd",
+                borderBottom: index < entriesForDate.length - 1 ? "1px solid #ddd" : "none",
                 paddingBottom: "0.5rem",
               }}
             >
@@ -533,37 +540,6 @@ export default function Journal({ user, onLogout }) {
               <div style={{ whiteSpace: "pre-wrap" }}>{entry}</div>
             </div>
           ))}
-        </div>
-      )}
-
-      {/* Display saved entry immediately below the calendar */}
-      {savedEntry && (
-        <div
-          style={{
-            marginTop: "2rem",
-            padding: "1rem",
-            backgroundColor: "#d0f0ff",
-            borderRadius: "8px",
-            border: "1px solid #3399ff",
-            maxWidth: 600,
-            marginLeft: "auto",
-            marginRight: "auto",
-          }}
-          aria-live="polite"
-        >
-          <div
-            style={{
-              fontWeight: "bold",
-              fontSize: "1rem",
-              marginBottom: "0.25rem",
-              color: "#0066cc",
-            }}
-          >
-            {savedEntry.date} {savedEntry.time}
-          </div>
-          <div style={{ whiteSpace: "pre-wrap", fontSize: "1rem" }}>
-            {savedEntry.entry}
-          </div>
         </div>
       )}
     </div>
