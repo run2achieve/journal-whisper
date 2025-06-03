@@ -29,6 +29,7 @@ export default function Journal({ user, onLogout }) {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [entriesForDate, setEntriesForDate] = useState([]);
   const [localEntries, setLocalEntries] = useState({});
+  const [saveAnimating, setSaveAnimating] = useState(false);
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -207,6 +208,8 @@ export default function Journal({ user, onLogout }) {
       user
     );
     if (result) {
+      setSaveAnimating(true);
+      setTimeout(() => setSaveAnimating(false), 500);
       setSaveMessage("Journal entry saved successfully!");
       setShowToast(true);
       setEntry("");
@@ -444,7 +447,9 @@ export default function Journal({ user, onLogout }) {
             style={{
               padding: "0.6rem 1.5rem",
               fontSize: "1rem",
-              backgroundColor: "#27ae60",
+              backgroundColor: saveAnimating ? "#2ecc71" : "#27ae60",
+              transform: saveAnimating ? "scale(1.05)" : "scale(1)",
+              transition: "all 0.3s ease",
               color: "white",
               border: "none",
               borderRadius: "8px",
