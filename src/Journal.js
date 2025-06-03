@@ -29,6 +29,7 @@ export default function Journal({ user, onLogout }) {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [entriesForDate, setEntriesForDate] = useState([]);
   const [localEntries, setLocalEntries] = useState({});
+  const [entriesCache, setEntriesCache] = useState({}); // Cache for fetched entries
   const [saveAnimating, setSaveAnimating] = useState(false);
   const [saveClickAnimating, setSaveClickAnimating] = useState(false);
 
@@ -48,7 +49,15 @@ export default function Journal({ user, onLogout }) {
     setCurrentTimestamp(generateTimestamp());
   }, []);
 
-  const fetchEntriesForDate = async (dateToFetch) => {
+  const fetchEntriesForDate = async (dateToFetch, forceRefresh = false) => {
+    const dateKey = formatDateLocal(dateToFetch);
+    
+    // Check cache first (unless force refresh)
+    if (!forceRefresh && entriesCache[dateKey]) {
+      setEntriesForDate(entriesCache[dateKey]);
+      return;
+    }
+
     const FETCH_API_URL =
       window.location.hostname === "localhost"
         ? "http://localhost:8090/getEntries"
@@ -60,7 +69,7 @@ export default function Journal({ user, onLogout }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           user,
-          date: formatDateLocal(dateToFetch),
+          date: dateKey,
         }),
       });
       if (!response.ok) throw new Error("Failed to fetch entries");
@@ -74,9 +83,19 @@ export default function Journal({ user, onLogout }) {
         return timeB - timeA; // Descending order
       });
       
+      // Update cache and state
+      setEntriesCache(prev => ({
+        ...prev,
+        [dateKey]: sortedEntries
+      }));
       setEntriesForDate(sortedEntries);
     } catch (err) {
       setEntriesForDate([]);
+      // Cache empty result to avoid repeated failed requests
+      setEntriesCache(prev => ({
+        ...prev,
+        [dateKey]: []
+      }));
     }
   };
 
@@ -234,17 +253,33 @@ export default function Journal({ user, onLogout }) {
         entry: entry,
       };
       
-      setEntriesForDate(prevEntries => [newEntry, ...prevEntries]);
+      const savedDate = new Date(currentTimestamp.date + "T00:00:00");
+      const currentDateKey = formatDateLocal(savedDate);
+      
+      // Only update entries if we're viewing the same date as we're saving to
+      const selectedDateKey = formatDateLocal(selectedDate);
+      if (currentDateKey === selectedDateKey) {
+        // Update both the displayed entries and the cache
+        setEntriesForDate(prevEntries => [newEntry, ...prevEntries]);
+        setEntriesCache(prev => ({
+          ...prev,
+          [currentDateKey]: [newEntry, ...(prev[currentDateKey] || [])]
+        }));
+      } else {
+        // If saving to a different date, just update the cache and switch to that date
+        setEntriesCache(prev => ({
+          ...prev,
+          [currentDateKey]: [newEntry, ...(prev[currentDateKey] || [])]
+        }));
+        setSelectedDate(savedDate);
+      }
 
       setEntry("");
       setCurrentTimestamp(generateTimestamp());
 
-      const savedDate = new Date(currentTimestamp.date + "T00:00:00");
-      setSelectedDate(savedDate);
-
       setLocalEntries((prev) => ({
         ...prev,
-        [formatDateLocal(savedDate)]: entry,
+        [currentDateKey]: entry,
       }));
     } else {
       setSaveMessage("Failed to save entry. Please try again.");
@@ -517,7 +552,24 @@ export default function Journal({ user, onLogout }) {
             border: "1px solid #ccc",
           }}
         >
-          <h3>Entries for {formatDateLocal(selectedDate)} (Most Recent First):</h3>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+            <h3 style={{ margin: 0 }}>Entries for {formatDateLocal(selectedDate)} (Most Recent First):</h3>
+            <button
+              onClick={() => fetchEntriesForDate(selectedDate, true)}
+              style={{
+                padding: "0.25rem 0.5rem",
+                fontSize: "0.8rem",
+                cursor: "pointer",
+                borderRadius: "4px",
+                border: "1px solid #888",
+                backgroundColor: "#f0f0f0",
+                color: "#333",
+              }}
+              title="Refresh entries from server"
+            >
+              🔄 Refresh
+            </button>
+          </div>
           {entriesForDate.map(({ time, entry }, index) => (
             <div
               key={`${time}-${index}`}
@@ -531,13 +583,21 @@ export default function Journal({ user, onLogout }) {
                 style={{
                   fontWeight: "bold",
                   fontSize: "0.9rem",
-                  marginBottom: "0.25rem",
+                  marginBottom: "0.5rem",
                   color: "#555",
+                  borderBottom: "1px solid #eee",
+                  paddingBottom: "0.25rem",
                 }}
               >
                 {time}
               </div>
-              <div style={{ whiteSpace: "pre-wrap" }}>{entry}</div>
+              <div style={{ 
+                whiteSpace: "pre-wrap",
+                paddingTop: "0.25rem",
+                lineHeight: "1.4"
+              }}>
+                {entry}
+              </div>
             </div>
           ))}
         </div>
