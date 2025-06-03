@@ -552,24 +552,7 @@ export default function Journal({ user, onLogout }) {
             border: "1px solid #ccc",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-            <h3 style={{ margin: 0 }}>Entries for {formatDateLocal(selectedDate)} (Most Recent First):</h3>
-            <button
-              onClick={() => fetchEntriesForDate(selectedDate, true)}
-              style={{
-                padding: "0.25rem 0.5rem",
-                fontSize: "0.8rem",
-                cursor: "pointer",
-                borderRadius: "4px",
-                border: "1px solid #888",
-                backgroundColor: "#f0f0f0",
-                color: "#333",
-              }}
-              title="Refresh entries from server"
-            >
-              🔄 Refresh
-            </button>
-          </div>
+          <h3>Entries for {formatDateLocal(selectedDate)} (Most Recent First):</h3>
           {entriesForDate.map(({ time, entry }, index) => (
             <div
               key={`${time}-${index}`}
