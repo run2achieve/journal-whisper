@@ -32,6 +32,7 @@ export default function Journal({ user, onLogout }) {
   const [entriesCache, setEntriesCache] = useState({}); // Cache for fetched entries
   const [saveAnimating, setSaveAnimating] = useState(false);
   const [saveClickAnimating, setSaveClickAnimating] = useState(false);
+  const [isLoadingEntries, setIsLoadingEntries] = useState(false);
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -57,6 +58,8 @@ export default function Journal({ user, onLogout }) {
       setEntriesForDate(entriesCache[dateKey]);
       return;
     }
+
+    setIsLoadingEntries(true);
 
     const FETCH_API_URL =
       window.location.hostname === "localhost"
@@ -96,6 +99,8 @@ export default function Journal({ user, onLogout }) {
         ...prev,
         [dateKey]: []
       }));
+    } finally {
+      setIsLoadingEntries(false);
     }
   };
 
@@ -542,49 +547,79 @@ export default function Journal({ user, onLogout }) {
         />
       </div>
 
-      {entriesForDate.length > 0 && (
-        <div
-          style={{
-            marginTop: "1rem",
-            padding: "1rem",
-            backgroundColor: "#f9f9f9",
-            borderRadius: "8px",
-            border: "1px solid #ccc",
-          }}
-        >
-          <h3>Entries for {formatDateLocal(selectedDate)} (Most Recent First):</h3>
-          {entriesForDate.map(({ time, entry }, index) => (
-            <div
-              key={`${time}-${index}`}
-              style={{
-                marginBottom: "1rem",
-                borderBottom: index < entriesForDate.length - 1 ? "1px solid #ddd" : "none",
-                paddingBottom: "0.5rem",
-              }}
-            >
+      {/* Entries section - now always shows something */}
+      <div
+        style={{
+          marginTop: "1rem",
+          padding: "1rem",
+          backgroundColor: "#f9f9f9",
+          borderRadius: "8px",
+          border: "1px solid #ccc",
+        }}
+      >
+        <h3>Entries for {formatDateLocal(selectedDate)}:</h3>
+        
+        {isLoadingEntries ? (
+          <div style={{ 
+            textAlign: "center", 
+            color: "#666", 
+            fontStyle: "italic",
+            padding: "1rem" 
+          }}>
+            Loading entries...
+          </div>
+        ) : entriesForDate.length > 0 ? (
+          <>
+            <div style={{ 
+              fontSize: "0.9rem", 
+              color: "#666", 
+              marginBottom: "1rem",
+              fontStyle: "italic" 
+            }}>
+              ({entriesForDate.length} {entriesForDate.length === 1 ? 'entry' : 'entries'} found - Most Recent First)
+            </div>
+            {entriesForDate.map(({ time, entry }, index) => (
               <div
+                key={`${time}-${index}`}
                 style={{
-                  fontWeight: "bold",
-                  fontSize: "0.9rem",
-                  marginBottom: "0.5rem",
-                  color: "#555",
-                  borderBottom: "1px solid #eee",
-                  paddingBottom: "0.25rem",
+                  marginBottom: "1rem",
+                  borderBottom: index < entriesForDate.length - 1 ? "1px solid #ddd" : "none",
+                  paddingBottom: "0.5rem",
                 }}
               >
-                {time}
+                <div
+                  style={{
+                    fontWeight: "bold",
+                    fontSize: "0.9rem",
+                    marginBottom: "0.5rem",
+                    color: "#555",
+                    borderBottom: "1px solid #eee",
+                    paddingBottom: "0.25rem",
+                  }}
+                >
+                  {time}
+                </div>
+                <div style={{ 
+                  whiteSpace: "pre-wrap",
+                  paddingTop: "0.25rem",
+                  lineHeight: "1.4"
+                }}>
+                  {entry}
+                </div>
               </div>
-              <div style={{ 
-                whiteSpace: "pre-wrap",
-                paddingTop: "0.25rem",
-                lineHeight: "1.4"
-              }}>
-                {entry}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </>
+        ) : (
+          <div style={{ 
+            textAlign: "center", 
+            color: "#666", 
+            fontStyle: "italic",
+            padding: "1rem" 
+          }}>
+            No entries found for this date.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
