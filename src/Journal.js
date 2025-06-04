@@ -33,6 +33,9 @@ export default function Journal({ user, onLogout }) {
   const [saveAnimating, setSaveAnimating] = useState(false);
   const [saveClickAnimating, setSaveClickAnimating] = useState(false);
   const [isLoadingEntries, setIsLoadingEntries] = useState(false);
+  
+  // DEBUG: Add state for debugging
+  const [debugInfo, setDebugInfo] = useState("");
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -53,9 +56,15 @@ export default function Journal({ user, onLogout }) {
   const fetchEntriesForDate = async (dateToFetch, forceRefresh = false) => {
     const dateKey = formatDateLocal(dateToFetch);
     
+    // DEBUG: Log the request details
+    console.log(`🔍 Fetching entries for date: ${dateKey}, user: ${user}`);
+    setDebugInfo(`Fetching entries for ${dateKey} (user: ${user})`);
+    
     // Check cache first (unless force refresh)
     if (!forceRefresh && entriesCache[dateKey]) {
+      console.log(`📋 Using cached entries for ${dateKey}:`, entriesCache[dateKey]);
       setEntriesForDate(entriesCache[dateKey]);
+      setDebugInfo(`Used cached data for ${dateKey} (${entriesCache[dateKey].length} entries)`);
       return;
     }
 
@@ -67,6 +76,9 @@ export default function Journal({ user, onLogout }) {
         : "https://journal-whisper.onrender.com/getEntries";
 
     try {
+      console.log(`📡 Making API request to: ${FETCH_API_URL}`);
+      console.log(`📦 Request payload:`, { user, date: dateKey });
+      
       const response = await fetch(FETCH_API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -75,8 +87,18 @@ export default function Journal({ user, onLogout }) {
           date: dateKey,
         }),
       });
-      if (!response.ok) throw new Error("Failed to fetch entries");
+      
+      console.log(`📊 Response status: ${response.status} ${response.statusText}`);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`❌ API Error: ${response.status} ${response.statusText}`, errorText);
+        setDebugInfo(`API Error: ${response.status} - ${errorText}`);
+        throw new Error(`Failed to fetch entries: ${response.status} ${response.statusText}`);
+      }
+      
       const data = await response.json();
+      console.log(`📋 Raw API response:`, data);
       
       // Sort entries by time in descending order (most recent first)
       const sortedEntries = (data.entries || []).sort((a, b) => {
@@ -86,6 +108,9 @@ export default function Journal({ user, onLogout }) {
         return timeB - timeA; // Descending order
       });
       
+      console.log(`✅ Processed entries for ${dateKey}:`, sortedEntries);
+      setDebugInfo(`Found ${sortedEntries.length} entries for ${dateKey}`);
+      
       // Update cache and state
       setEntriesCache(prev => ({
         ...prev,
@@ -93,6 +118,8 @@ export default function Journal({ user, onLogout }) {
       }));
       setEntriesForDate(sortedEntries);
     } catch (err) {
+      console.error(`❌ Error fetching entries:`, err);
+      setDebugInfo(`Error: ${err.message}`);
       setEntriesForDate([]);
       // Cache empty result to avoid repeated failed requests
       setEntriesCache(prev => ({
@@ -213,15 +240,25 @@ export default function Journal({ user, onLogout }) {
         : "https://journal-whisper.onrender.com/saveEntry";
 
     try {
+      console.log(`💾 Saving entry:`, { date, time, entry: text, user: username });
+      
       const response = await fetch(SAVE_API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ date, time, entry: text, user: username }),
       });
-      if (!response.ok)
-        throw new Error("Failed to save entry to Google Sheets");
-      return await response.json();
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`❌ Save Error: ${response.status}`, errorText);
+        throw new Error(`Failed to save entry to Google Sheets: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      console.log(`✅ Save successful:`, result);
+      return result;
     } catch (error) {
+      console.error(`❌ Save error:`, error);
       setSaveMessage("Error saving to Google Sheets: " + error.message);
       setShowToast(true);
       return null;
@@ -297,6 +334,12 @@ export default function Journal({ user, onLogout }) {
     setSaveMessage("");
   };
 
+  // DEBUG: Add manual refresh function
+  const handleRefreshEntries = () => {
+    console.log(`🔄 Manual refresh requested for ${formatDateLocal(selectedDate)}`);
+    fetchEntriesForDate(selectedDate, true); // Force refresh
+  };
+
   useEffect(() => {
     return () => {
       if (
@@ -354,6 +397,23 @@ export default function Journal({ user, onLogout }) {
           aria-live="polite"
         >
           {saveMessage}
+        </div>
+      )}
+
+      {/* DEBUG INFO */}
+      {debugInfo && (
+        <div
+          style={{
+            backgroundColor: "#e8f4fd",
+            border: "1px solid #bee5eb",
+            borderRadius: "4px",
+            padding: "0.75rem",
+            marginBottom: "1rem",
+            fontSize: "0.9rem",
+            color: "#0c5460",
+          }}
+        >
+          <strong>Debug:</strong> {debugInfo}
         </div>
       )}
 
@@ -557,7 +617,24 @@ export default function Journal({ user, onLogout }) {
           border: "1px solid #ccc",
         }}
       >
-        <h3>Entries for {formatDateLocal(selectedDate)}:</h3>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h3>Entries for {formatDateLocal(selectedDate)}:</h3>
+          <button
+            onClick={handleRefreshEntries}
+            style={{
+              padding: "0.3rem 0.75rem",
+              fontSize: "0.9rem",
+              cursor: "pointer",
+              borderRadius: "6px",
+              border: "1px solid #888",
+              backgroundColor: "#f0f0f0",
+              color: "#333",
+            }}
+            title="Refresh entries for this date"
+          >
+            🔄 Refresh
+          </button>
+        </div>
         
         {isLoadingEntries ? (
           <div style={{ 
