@@ -30,19 +30,27 @@ export default function Journal({ user, onLogout }) {
   const [entriesForDate, setEntriesForDate] = useState([]);
   const [localEntries, setLocalEntries] = useState({});
   const [entriesCache, setEntriesCache] = useState({}); // Cache for fetched entries
+  const [cacheTimestamps, setCacheTimestamps] = useState({}); // Track when data was cached
   const [saveAnimating, setSaveAnimating] = useState(false);
   const [saveClickAnimating, setSaveClickAnimating] = useState(false);
   const [isLoadingEntries, setIsLoadingEntries] = useState(false);
+  const [isRefreshingEntries, setIsRefreshingEntries] = useState(false);
+  const [fetchError, setFetchError] = useState(null);
   
   // New states for modal functionality
   const [showModal, setShowModal] = useState(false);
   const [modalEntries, setModalEntries] = useState([]);
   const [modalDate, setModalDate] = useState("");
   const [isLoadingModal, setIsLoadingModal] = useState(false);
+  const [isRefreshingModal, setIsRefreshingModal] = useState(false);
+  const [modalError, setModalError] = useState(null);
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const countdownIntervalRef = useRef(null);
+
+  // Cache expiry time (5 minutes)
+  const CACHE_EXPIRY_MS = 5 * 60 * 1000;
 
   const generateTimestamp = () => {
     const now = new Date();
@@ -56,16 +64,34 @@ export default function Journal({ user, onLogout }) {
     setCurrentTimestamp(generateTimestamp());
   }, []);
 
+  const isCacheValid = (dateKey) => {
+    const timestamp = cacheTimestamps[dateKey];
+    if (!timestamp) return false;
+    return Date.now() - timestamp < CACHE_EXPIRY_MS;
+  };
+
   const fetchEntriesForDate = async (dateToFetch, forceRefresh = false) => {
     const dateKey = formatDateLocal(dateToFetch);
     
-    // Check cache first (unless force refresh)
-    if (!forceRefresh && entriesCache[dateKey]) {
+    // Show cached data immediately if available and valid (unless force refresh)
+    const hasCachedData = entriesCache[dateKey];
+    const cacheIsValid = isCacheValid(dateKey);
+    
+    if (!forceRefresh && hasCachedData && cacheIsValid) {
       setEntriesForDate(entriesCache[dateKey]);
+      setFetchError(null);
       return;
     }
 
-    setIsLoadingEntries(true);
+    // If we have cached data but it's stale, show it while loading fresh data
+    if (hasCachedData && !forceRefresh) {
+      setEntriesForDate(entriesCache[dateKey]);
+      setIsRefreshingEntries(true);
+      setFetchError(null);
+    } else {
+      setIsLoadingEntries(true);
+      setFetchError(null);
+    }
 
     const FETCH_API_URL =
       window.location.hostname === "localhost"
@@ -75,13 +101,23 @@ export default function Journal({ user, onLogout }) {
     try {
       const response = await fetch(FETCH_API_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache",
+          "Expires": "0"
+        },
         body: JSON.stringify({
           user,
           date: dateKey,
+          timestamp: Date.now() // Cache-busting timestamp
         }),
       });
-      if (!response.ok) throw new Error("Failed to fetch entries");
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch entries: ${response.status} ${response.statusText}`);
+      }
+      
       const data = await response.json();
       
       // Sort entries by time in descending order (most recent first)
@@ -92,36 +128,67 @@ export default function Journal({ user, onLogout }) {
         return timeB - timeA; // Descending order
       });
       
-      // Update cache and state
+      // Update cache with timestamp
       setEntriesCache(prev => ({
         ...prev,
         [dateKey]: sortedEntries
       }));
-      setEntriesForDate(sortedEntries);
-    } catch (err) {
-      setEntriesForDate([]);
-      // Cache empty result to avoid repeated failed requests
-      setEntriesCache(prev => ({
+      setCacheTimestamps(prev => ({
         ...prev,
-        [dateKey]: []
+        [dateKey]: Date.now()
       }));
+      
+      setEntriesForDate(sortedEntries);
+      setFetchError(null);
+      
+    } catch (err) {
+      console.error("Error fetching entries:", err);
+      
+      // If we have cached data, keep showing it with error message
+      if (!hasCachedData) {
+        setEntriesForDate([]);
+        // Cache empty result to avoid repeated failed requests
+        setEntriesCache(prev => ({
+          ...prev,
+          [dateKey]: []
+        }));
+        setCacheTimestamps(prev => ({
+          ...prev,
+          [dateKey]: Date.now()
+        }));
+      }
+      
+      setFetchError(err.message);
+      
     } finally {
       setIsLoadingEntries(false);
+      setIsRefreshingEntries(false);
     }
   };
 
-  // New function to handle date clicks and show modal
+  // Enhanced function to handle date clicks and show modal
   const handleDateClick = async (clickedDate) => {
     const dateKey = formatDateLocal(clickedDate);
     setModalDate(dateKey);
     setShowModal(true);
-    setIsLoadingModal(true);
+    setModalError(null);
 
-    // Check cache first
-    if (entriesCache[dateKey]) {
+    // Check cache first and show if valid
+    const hasCachedData = entriesCache[dateKey];
+    const cacheIsValid = isCacheValid(dateKey);
+    
+    if (hasCachedData && cacheIsValid) {
       setModalEntries(entriesCache[dateKey]);
       setIsLoadingModal(false);
       return;
+    }
+
+    // If we have cached data but it's stale, show it while loading fresh data
+    if (hasCachedData) {
+      setModalEntries(entriesCache[dateKey]);
+      setIsRefreshingModal(true);
+    } else {
+      setIsLoadingModal(true);
     }
 
     const FETCH_API_URL =
@@ -132,13 +199,23 @@ export default function Journal({ user, onLogout }) {
     try {
       const response = await fetch(FETCH_API_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache",
+          "Expires": "0"
+        },
         body: JSON.stringify({
           user,
           date: dateKey,
+          timestamp: Date.now() // Cache-busting timestamp
         }),
       });
-      if (!response.ok) throw new Error("Failed to fetch entries");
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch entries: ${response.status} ${response.statusText}`);
+      }
+      
       const data = await response.json();
       
       // Sort entries by time in descending order (most recent first)
@@ -148,20 +225,39 @@ export default function Journal({ user, onLogout }) {
         return timeB - timeA;
       });
       
-      // Update cache
+      // Update cache with timestamp
       setEntriesCache(prev => ({
         ...prev,
         [dateKey]: sortedEntries
       }));
-      setModalEntries(sortedEntries);
-    } catch (err) {
-      setModalEntries([]);
-      setEntriesCache(prev => ({
+      setCacheTimestamps(prev => ({
         ...prev,
-        [dateKey]: []
+        [dateKey]: Date.now()
       }));
+      
+      setModalEntries(sortedEntries);
+      setModalError(null);
+      
+    } catch (err) {
+      console.error("Error fetching modal entries:", err);
+      
+      if (!hasCachedData) {
+        setModalEntries([]);
+        setEntriesCache(prev => ({
+          ...prev,
+          [dateKey]: []
+        }));
+        setCacheTimestamps(prev => ({
+          ...prev,
+          [dateKey]: Date.now()
+        }));
+      }
+      
+      setModalError(err.message);
+      
     } finally {
       setIsLoadingModal(false);
+      setIsRefreshingModal(false);
     }
   };
 
@@ -169,6 +265,11 @@ export default function Journal({ user, onLogout }) {
     setShowModal(false);
     setModalEntries([]);
     setModalDate("");
+    setModalError(null);
+  };
+
+  const handleRefreshEntries = () => {
+    fetchEntriesForDate(selectedDate, true);
   };
 
   useEffect(() => {
@@ -328,6 +429,12 @@ export default function Journal({ user, onLogout }) {
       const savedDate = new Date(currentTimestamp.date + "T00:00:00");
       const currentDateKey = formatDateLocal(savedDate);
       
+      // Update cache timestamp since we're adding new data
+      setCacheTimestamps(prev => ({
+        ...prev,
+        [currentDateKey]: Date.now()
+      }));
+      
       // Only update entries if we're viewing the same date as we're saving to
       const selectedDateKey = formatDateLocal(selectedDate);
       if (currentDateKey === selectedDateKey) {
@@ -482,7 +589,33 @@ export default function Journal({ user, onLogout }) {
 
             <h2 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#333" }}>
               📅 Entries for {modalDate}
+              {isRefreshingModal && (
+                <span style={{ fontSize: "0.8rem", color: "#666", marginLeft: "1rem" }}>
+                  🔄 Refreshing...
+                </span>
+              )}
             </h2>
+
+            {modalError && (
+              <div
+                style={{
+                  backgroundColor: "#fee",
+                  color: "#c33",
+                  padding: "0.75rem",
+                  borderRadius: "6px",
+                  marginBottom: "1rem",
+                  fontSize: "0.9rem",
+                  border: "1px solid #fcc",
+                }}
+              >
+                ⚠️ Error loading entries: {modalError}
+                {modalEntries.length > 0 && (
+                  <div style={{ marginTop: "0.5rem", fontSize: "0.8rem" }}>
+                    Showing cached data below.
+                  </div>
+                )}
+              </div>
+            )}
 
             {isLoadingModal ? (
               <div
@@ -506,6 +639,11 @@ export default function Journal({ user, onLogout }) {
                   }}
                 >
                   {modalEntries.length} {modalEntries.length === 1 ? "entry" : "entries"} found
+                  {!isCacheValid(modalDate) && modalEntries.length > 0 && (
+                    <span style={{ color: "#f39c12", marginLeft: "0.5rem" }}>
+                      (cached data)
+                    </span>
+                  )}
                 </div>
                 <div style={{ maxHeight: "400px", overflowY: "auto" }}>
                   {modalEntries.map(({ time, entry }, index) => (
@@ -761,7 +899,7 @@ export default function Journal({ user, onLogout }) {
         />
       </div>
 
-      {/* Entries section - now always shows something */}
+      {/* Entries section with enhanced error handling and refresh */}
       <div
         style={{
           marginTop: "1rem",
@@ -771,7 +909,58 @@ export default function Journal({ user, onLogout }) {
           border: "1px solid #ccc",
         }}
       >
-        <h3>Entries for {formatDateLocal(selectedDate)}:</h3>
+        <div style={{ 
+          display: "flex", 
+          justifyContent: "space-between", 
+          alignItems: "center",
+          marginBottom: "1rem" 
+        }}>
+          <h3 style={{ margin: 0 }}>
+            Entries for {formatDateLocal(selectedDate)}
+            {isRefreshingEntries && (
+              <span style={{ fontSize: "0.8rem", color: "#666", marginLeft: "1rem" }}>
+                🔄 Refreshing...
+              </span>
+            )}
+          </h3>
+          <button
+            onClick={handleRefreshEntries}
+            disabled={isLoadingEntries || isRefreshingEntries}
+            style={{
+              padding: "0.4rem 0.8rem",
+              fontSize: "0.8rem",
+              cursor: isLoadingEntries || isRefreshingEntries ? "not-allowed" : "pointer",
+              borderRadius: "6px",
+              border: "1px solid #888",
+              backgroundColor: "#f0f0f0",
+              color: "#333",
+            }}
+            title="Refresh entries"
+          >
+            🔄 Refresh
+          </button>
+        </div>
+
+        {fetchError && (
+          <div
+            style={{
+              backgroundColor: "#fee",
+              color: "#c33",
+              padding: "0.75rem",
+              borderRadius: "6px",
+              marginBottom: "1rem",
+              fontSize: "0.9rem",
+              border: "1px solid #fcc",
+            }}
+          >
+            ⚠️ Error loading entries: {fetchError}
+            {entriesForDate.length > 0 && (
+              <div style={{ marginTop: "0.5rem", fontSize: "0.8rem" }}>
+                Showing cached data below.
+              </div>
+            )}
+          </div>
+        )}
         
         {isLoadingEntries ? (
           <div style={{ 
@@ -791,6 +980,11 @@ export default function Journal({ user, onLogout }) {
               fontStyle: "italic" 
             }}>
               ({entriesForDate.length} {entriesForDate.length === 1 ? 'entry' : 'entries'} found - Most Recent First)
+              {!isCacheValid(formatDateLocal(selectedDate)) && entriesForDate.length > 0 && (
+                <span style={{ color: "#f39c12", marginLeft: "0.5rem" }}>
+                  (cached data)
+                </span>
+              )}
             </div>
             {entriesForDate.map(({ time, entry }, index) => (
               <div
