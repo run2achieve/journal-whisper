@@ -9,9 +9,13 @@ const PROXY_API_URL =
     : "https://journal-whisper.onrender.com/transcribeAudio";
 
 const formatDateLocal = (date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+  // Ensure we're working with a proper Date object
+  const dateObj = date instanceof Date ? date : new Date(date);
+  
+  // Use local timezone instead of UTC to avoid date shifting
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+  const day = String(dateObj.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 };
 
@@ -72,6 +76,7 @@ export default function Journal({ user, onLogout }) {
 
   const fetchEntriesForDate = async (dateToFetch, forceRefresh = false) => {
     const dateKey = formatDateLocal(dateToFetch);
+    console.log("Fetching entries for date:", dateToFetch, "formatted as:", dateKey, "user:", user); // Debug log
     
     // Show cached data immediately if available and valid (unless force refresh)
     const hasCachedData = entriesCache[dateKey];
@@ -99,6 +104,14 @@ export default function Journal({ user, onLogout }) {
         : "https://journal-whisper.onrender.com/getEntries";
 
     try {
+      const requestBody = {
+        user: user, // Ensure user is properly passed
+        date: dateKey,
+        timestamp: Date.now() // Cache-busting timestamp
+      };
+      
+      console.log("Sending request:", requestBody); // Debug log
+      
       const response = await fetch(FETCH_API_URL, {
         method: "POST",
         headers: { 
@@ -107,18 +120,17 @@ export default function Journal({ user, onLogout }) {
           "Pragma": "no-cache",
           "Expires": "0"
         },
-        body: JSON.stringify({
-          user,
-          date: dateKey,
-          timestamp: Date.now() // Cache-busting timestamp
-        }),
+        body: JSON.stringify(requestBody),
       });
+      
+      console.log("Response status:", response.status); // Debug log
       
       if (!response.ok) {
         throw new Error(`Failed to fetch entries: ${response.status} ${response.statusText}`);
       }
       
       const data = await response.json();
+      console.log("Received response data:", data); // Debug log
       
       // Sort entries by time in descending order (most recent first)
       const sortedEntries = (data.entries || []).sort((a, b) => {
@@ -169,6 +181,8 @@ export default function Journal({ user, onLogout }) {
   // Enhanced function to handle date clicks and show modal
   const handleDateClick = async (clickedDate) => {
     const dateKey = formatDateLocal(clickedDate);
+    console.log("Clicked date:", clickedDate, "Formatted as:", dateKey, "User:", user); // Debug log
+    
     setModalDate(dateKey);
     setShowModal(true);
     setModalError(null);
@@ -197,6 +211,14 @@ export default function Journal({ user, onLogout }) {
         : "https://journal-whisper.onrender.com/getEntries";
 
     try {
+      const requestBody = {
+        user: user, // Make sure user is properly passed
+        date: dateKey,
+        timestamp: Date.now() // Cache-busting timestamp
+      };
+      
+      console.log("Fetching entries for modal - Request:", requestBody); // Debug log
+      
       const response = await fetch(FETCH_API_URL, {
         method: "POST",
         headers: { 
@@ -205,18 +227,17 @@ export default function Journal({ user, onLogout }) {
           "Pragma": "no-cache",
           "Expires": "0"
         },
-        body: JSON.stringify({
-          user,
-          date: dateKey,
-          timestamp: Date.now() // Cache-busting timestamp
-        }),
+        body: JSON.stringify(requestBody),
       });
+      
+      console.log("Modal fetch response status:", response.status); // Debug log
       
       if (!response.ok) {
         throw new Error(`Failed to fetch entries: ${response.status} ${response.statusText}`);
       }
       
       const data = await response.json();
+      console.log("Modal fetch received data:", data); // Debug log
       
       // Sort entries by time in descending order (most recent first)
       const sortedEntries = (data.entries || []).sort((a, b) => {
@@ -224,6 +245,8 @@ export default function Journal({ user, onLogout }) {
         const timeB = new Date(`1970-01-01 ${b.time}`);
         return timeB - timeA;
       });
+      
+      console.log("Modal sorted entries:", sortedEntries); // Debug log
       
       // Update cache with timestamp
       setEntriesCache(prev => ({
@@ -381,6 +404,8 @@ export default function Journal({ user, onLogout }) {
         : "https://journal-whisper.onrender.com/saveEntry";
 
     try {
+      console.log("Saving to Google Sheet:", { date, time, entry: text, user: username }); // Debug log
+      
       const response = await fetch(SAVE_API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -388,8 +413,12 @@ export default function Journal({ user, onLogout }) {
       });
       if (!response.ok)
         throw new Error("Failed to save entry to Google Sheets");
-      return await response.json();
+      
+      const result = await response.json();
+      console.log("Save result:", result); // Debug log
+      return result;
     } catch (error) {
+      console.error("Save error:", error); // Debug log
       setSaveMessage("Error saving to Google Sheets: " + error.message);
       setShowToast(true);
       return null;
@@ -408,12 +437,19 @@ export default function Journal({ user, onLogout }) {
     setSaveClickAnimating(true);
     setTimeout(() => setSaveClickAnimating(false), 150);
 
+    // Ensure we're using the same date format when saving
+    const saveDate = formatDateLocal(new Date()); // Use current date
+    const saveTime = new Date().toLocaleTimeString();
+    
+    console.log("Saving entry with date:", saveDate, "time:", saveTime, "user:", user); // Debug log
+
     const result = await saveToGoogleSheet(
-      currentTimestamp.date,
-      currentTimestamp.time,
+      saveDate,
+      saveTime,
       entry,
       user
     );
+    
     if (result) {
       setSaveAnimating(true);
       setTimeout(() => setSaveAnimating(false), 500);
@@ -422,35 +458,32 @@ export default function Journal({ user, onLogout }) {
 
       // Add the new entry to the current entries list at the top (most recent first)
       const newEntry = {
-        time: currentTimestamp.time,
+        time: saveTime,
         entry: entry,
       };
-      
-      const savedDate = new Date(currentTimestamp.date + "T00:00:00");
-      const currentDateKey = formatDateLocal(savedDate);
       
       // Update cache timestamp since we're adding new data
       setCacheTimestamps(prev => ({
         ...prev,
-        [currentDateKey]: Date.now()
+        [saveDate]: Date.now()
       }));
       
       // Only update entries if we're viewing the same date as we're saving to
       const selectedDateKey = formatDateLocal(selectedDate);
-      if (currentDateKey === selectedDateKey) {
+      if (saveDate === selectedDateKey) {
         // Update both the displayed entries and the cache
         setEntriesForDate(prevEntries => [newEntry, ...prevEntries]);
         setEntriesCache(prev => ({
           ...prev,
-          [currentDateKey]: [newEntry, ...(prev[currentDateKey] || [])]
+          [saveDate]: [newEntry, ...(prev[saveDate] || [])]
         }));
       } else {
         // If saving to a different date, just update the cache and switch to that date
         setEntriesCache(prev => ({
           ...prev,
-          [currentDateKey]: [newEntry, ...(prev[currentDateKey] || [])]
+          [saveDate]: [newEntry, ...(prev[saveDate] || [])]
         }));
-        setSelectedDate(savedDate);
+        setSelectedDate(new Date(saveDate + "T00:00:00"));
       }
 
       setEntry("");
@@ -458,7 +491,7 @@ export default function Journal({ user, onLogout }) {
 
       setLocalEntries((prev) => ({
         ...prev,
-        [currentDateKey]: entry,
+        [saveDate]: entry,
       }));
     } else {
       setSaveMessage("Failed to save entry. Please try again.");
@@ -889,6 +922,7 @@ export default function Journal({ user, onLogout }) {
       <div style={{ display: "flex", justifyContent: "center" }}>
         <Calendar
           onChange={(date) => {
+            console.log("Calendar date changed to:", date, "formatted as:", formatDateLocal(date)); // Debug log
             setSelectedDate(date);
             setShowToast(false);
             setSaveMessage("");
