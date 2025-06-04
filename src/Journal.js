@@ -34,8 +34,11 @@ export default function Journal({ user, onLogout }) {
   const [saveClickAnimating, setSaveClickAnimating] = useState(false);
   const [isLoadingEntries, setIsLoadingEntries] = useState(false);
   
-  // DEBUG: Add state for debugging
-  const [debugInfo, setDebugInfo] = useState("");
+  // New states for modal functionality
+  const [showModal, setShowModal] = useState(false);
+  const [modalEntries, setModalEntries] = useState([]);
+  const [modalDate, setModalDate] = useState("");
+  const [isLoadingModal, setIsLoadingModal] = useState(false);
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -56,15 +59,9 @@ export default function Journal({ user, onLogout }) {
   const fetchEntriesForDate = async (dateToFetch, forceRefresh = false) => {
     const dateKey = formatDateLocal(dateToFetch);
     
-    // DEBUG: Log the request details
-    console.log(`🔍 Fetching entries for date: ${dateKey}, user: ${user}`);
-    setDebugInfo(`Fetching entries for ${dateKey} (user: ${user})`);
-    
     // Check cache first (unless force refresh)
     if (!forceRefresh && entriesCache[dateKey]) {
-      console.log(`📋 Using cached entries for ${dateKey}:`, entriesCache[dateKey]);
       setEntriesForDate(entriesCache[dateKey]);
-      setDebugInfo(`Used cached data for ${dateKey} (${entriesCache[dateKey].length} entries)`);
       return;
     }
 
@@ -76,9 +73,6 @@ export default function Journal({ user, onLogout }) {
         : "https://journal-whisper.onrender.com/getEntries";
 
     try {
-      console.log(`📡 Making API request to: ${FETCH_API_URL}`);
-      console.log(`📦 Request payload:`, { user, date: dateKey });
-      
       const response = await fetch(FETCH_API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -87,18 +81,8 @@ export default function Journal({ user, onLogout }) {
           date: dateKey,
         }),
       });
-      
-      console.log(`📊 Response status: ${response.status} ${response.statusText}`);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`❌ API Error: ${response.status} ${response.statusText}`, errorText);
-        setDebugInfo(`API Error: ${response.status} - ${errorText}`);
-        throw new Error(`Failed to fetch entries: ${response.status} ${response.statusText}`);
-      }
-      
+      if (!response.ok) throw new Error("Failed to fetch entries");
       const data = await response.json();
-      console.log(`📋 Raw API response:`, data);
       
       // Sort entries by time in descending order (most recent first)
       const sortedEntries = (data.entries || []).sort((a, b) => {
@@ -108,9 +92,6 @@ export default function Journal({ user, onLogout }) {
         return timeB - timeA; // Descending order
       });
       
-      console.log(`✅ Processed entries for ${dateKey}:`, sortedEntries);
-      setDebugInfo(`Found ${sortedEntries.length} entries for ${dateKey}`);
-      
       // Update cache and state
       setEntriesCache(prev => ({
         ...prev,
@@ -118,8 +99,6 @@ export default function Journal({ user, onLogout }) {
       }));
       setEntriesForDate(sortedEntries);
     } catch (err) {
-      console.error(`❌ Error fetching entries:`, err);
-      setDebugInfo(`Error: ${err.message}`);
       setEntriesForDate([]);
       // Cache empty result to avoid repeated failed requests
       setEntriesCache(prev => ({
@@ -129,6 +108,67 @@ export default function Journal({ user, onLogout }) {
     } finally {
       setIsLoadingEntries(false);
     }
+  };
+
+  // New function to handle date clicks and show modal
+  const handleDateClick = async (clickedDate) => {
+    const dateKey = formatDateLocal(clickedDate);
+    setModalDate(dateKey);
+    setShowModal(true);
+    setIsLoadingModal(true);
+
+    // Check cache first
+    if (entriesCache[dateKey]) {
+      setModalEntries(entriesCache[dateKey]);
+      setIsLoadingModal(false);
+      return;
+    }
+
+    const FETCH_API_URL =
+      window.location.hostname === "localhost"
+        ? "http://localhost:8090/getEntries"
+        : "https://journal-whisper.onrender.com/getEntries";
+
+    try {
+      const response = await fetch(FETCH_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user,
+          date: dateKey,
+        }),
+      });
+      if (!response.ok) throw new Error("Failed to fetch entries");
+      const data = await response.json();
+      
+      // Sort entries by time in descending order (most recent first)
+      const sortedEntries = (data.entries || []).sort((a, b) => {
+        const timeA = new Date(`1970-01-01 ${a.time}`);
+        const timeB = new Date(`1970-01-01 ${b.time}`);
+        return timeB - timeA;
+      });
+      
+      // Update cache
+      setEntriesCache(prev => ({
+        ...prev,
+        [dateKey]: sortedEntries
+      }));
+      setModalEntries(sortedEntries);
+    } catch (err) {
+      setModalEntries([]);
+      setEntriesCache(prev => ({
+        ...prev,
+        [dateKey]: []
+      }));
+    } finally {
+      setIsLoadingModal(false);
+    }
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setModalEntries([]);
+    setModalDate("");
   };
 
   useEffect(() => {
@@ -240,25 +280,15 @@ export default function Journal({ user, onLogout }) {
         : "https://journal-whisper.onrender.com/saveEntry";
 
     try {
-      console.log(`💾 Saving entry:`, { date, time, entry: text, user: username });
-      
       const response = await fetch(SAVE_API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ date, time, entry: text, user: username }),
       });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`❌ Save Error: ${response.status}`, errorText);
-        throw new Error(`Failed to save entry to Google Sheets: ${response.status}`);
-      }
-      
-      const result = await response.json();
-      console.log(`✅ Save successful:`, result);
-      return result;
+      if (!response.ok)
+        throw new Error("Failed to save entry to Google Sheets");
+      return await response.json();
     } catch (error) {
-      console.error(`❌ Save error:`, error);
       setSaveMessage("Error saving to Google Sheets: " + error.message);
       setShowToast(true);
       return null;
@@ -334,12 +364,6 @@ export default function Journal({ user, onLogout }) {
     setSaveMessage("");
   };
 
-  // DEBUG: Add manual refresh function
-  const handleRefreshEntries = () => {
-    console.log(`🔄 Manual refresh requested for ${formatDateLocal(selectedDate)}`);
-    fetchEntriesForDate(selectedDate, true); // Force refresh
-  };
-
   useEffect(() => {
     return () => {
       if (
@@ -400,20 +424,139 @@ export default function Journal({ user, onLogout }) {
         </div>
       )}
 
-      {/* DEBUG INFO */}
-      {debugInfo && (
+      {/* Modal for showing entries when date is clicked */}
+      {showModal && (
         <div
           style={{
-            backgroundColor: "#e8f4fd",
-            border: "1px solid #bee5eb",
-            borderRadius: "4px",
-            padding: "0.75rem",
-            marginBottom: "1rem",
-            fontSize: "0.9rem",
-            color: "#0c5460",
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.7)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 10000,
+            padding: "2rem",
           }}
+          onClick={closeModal}
         >
-          <strong>Debug:</strong> {debugInfo}
+          <div
+            style={{
+              backgroundColor: "#FFF8E7",
+              borderRadius: "12px",
+              padding: "2rem",
+              maxWidth: "600px",
+              maxHeight: "80vh",
+              overflowY: "auto",
+              boxShadow: "0 10px 30px rgba(0, 0, 0, 0.3)",
+              position: "relative",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close button */}
+            <button
+              onClick={closeModal}
+              style={{
+                position: "absolute",
+                top: "1rem",
+                right: "1rem",
+                background: "none",
+                border: "none",
+                fontSize: "1.5rem",
+                cursor: "pointer",
+                color: "#666",
+                padding: "0.5rem",
+                borderRadius: "50%",
+                width: "40px",
+                height: "40px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+              title="Close"
+            >
+              ×
+            </button>
+
+            <h2 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#333" }}>
+              📅 Entries for {modalDate}
+            </h2>
+
+            {isLoadingModal ? (
+              <div
+                style={{
+                  textAlign: "center",
+                  color: "#666",
+                  fontStyle: "italic",
+                  padding: "2rem",
+                }}
+              >
+                Loading entries...
+              </div>
+            ) : modalEntries.length > 0 ? (
+              <>
+                <div
+                  style={{
+                    fontSize: "0.9rem",
+                    color: "#666",
+                    marginBottom: "1rem",
+                    fontStyle: "italic",
+                  }}
+                >
+                  {modalEntries.length} {modalEntries.length === 1 ? "entry" : "entries"} found
+                </div>
+                <div style={{ maxHeight: "400px", overflowY: "auto" }}>
+                  {modalEntries.map(({ time, entry }, index) => (
+                    <div
+                      key={`${time}-${index}`}
+                      style={{
+                        marginBottom: "1.5rem",
+                        padding: "1rem",
+                        backgroundColor: "#f9f9f9",
+                        borderRadius: "8px",
+                        border: "1px solid #ddd",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontWeight: "bold",
+                          fontSize: "0.9rem",
+                          marginBottom: "0.5rem",
+                          color: "#555",
+                          borderBottom: "1px solid #eee",
+                          paddingBottom: "0.25rem",
+                        }}
+                      >
+                        🕒 {time}
+                      </div>
+                      <div
+                        style={{
+                          whiteSpace: "pre-wrap",
+                          paddingTop: "0.5rem",
+                          lineHeight: "1.5",
+                        }}
+                      >
+                        {entry}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div
+                style={{
+                  textAlign: "center",
+                  color: "#666",
+                  fontStyle: "italic",
+                  padding: "2rem",
+                }}
+              >
+                No entries found for this date.
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -594,6 +737,16 @@ export default function Journal({ user, onLogout }) {
       <h2 style={{ textAlign: "center", marginBottom: "1rem" }}>
         📅 Journal Calendar
       </h2>
+      
+      <div style={{ 
+        textAlign: "center", 
+        marginBottom: "1rem", 
+        fontSize: "0.9rem", 
+        color: "#666",
+        fontStyle: "italic" 
+      }}>
+        💡 Click on any date to view all entries for that day
+      </div>
 
       <div style={{ display: "flex", justifyContent: "center" }}>
         <Calendar
@@ -602,6 +755,7 @@ export default function Journal({ user, onLogout }) {
             setShowToast(false);
             setSaveMessage("");
           }}
+          onClickDay={handleDateClick}
           value={selectedDate}
           locale="en-US"
         />
@@ -617,24 +771,7 @@ export default function Journal({ user, onLogout }) {
           border: "1px solid #ccc",
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h3>Entries for {formatDateLocal(selectedDate)}:</h3>
-          <button
-            onClick={handleRefreshEntries}
-            style={{
-              padding: "0.3rem 0.75rem",
-              fontSize: "0.9rem",
-              cursor: "pointer",
-              borderRadius: "6px",
-              border: "1px solid #888",
-              backgroundColor: "#f0f0f0",
-              color: "#333",
-            }}
-            title="Refresh entries for this date"
-          >
-            🔄 Refresh
-          </button>
-        </div>
+        <h3>Entries for {formatDateLocal(selectedDate)}:</h3>
         
         {isLoadingEntries ? (
           <div style={{ 
