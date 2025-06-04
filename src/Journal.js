@@ -117,19 +117,13 @@ export default function Journal({ user, onLogout }) {
     setShowModal(true);
     setIsLoadingModal(true);
 
-    // Check cache first
-    if (entriesCache[dateKey]) {
-      setModalEntries(entriesCache[dateKey]);
-      setIsLoadingModal(false);
-      return;
-    }
-
     const FETCH_API_URL =
       window.location.hostname === "localhost"
         ? "http://localhost:8090/getEntries"
         : "https://journal-whisper.onrender.com/getEntries";
 
     try {
+      // Always fetch fresh data from server for modal to ensure we get all entries
       const response = await fetch(FETCH_API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -148,12 +142,18 @@ export default function Journal({ user, onLogout }) {
         return timeB - timeA;
       });
       
-      // Update cache
+      // Update cache with fresh data
       setEntriesCache(prev => ({
         ...prev,
         [dateKey]: sortedEntries
       }));
       setModalEntries(sortedEntries);
+      
+      // If this is the same date as the currently selected date, update the main view as well
+      const selectedDateKey = formatDateLocal(selectedDate);
+      if (dateKey === selectedDateKey) {
+        setEntriesForDate(sortedEntries);
+      }
     } catch (err) {
       setModalEntries([]);
       setEntriesCache(prev => ({
@@ -328,21 +328,19 @@ export default function Journal({ user, onLogout }) {
       const savedDate = new Date(currentTimestamp.date + "T00:00:00");
       const currentDateKey = formatDateLocal(savedDate);
       
-      // Only update entries if we're viewing the same date as we're saving to
+      // Always update the cache with the new entry
+      const updatedEntries = [newEntry, ...(entriesCache[currentDateKey] || [])];
+      setEntriesCache(prev => ({
+        ...prev,
+        [currentDateKey]: updatedEntries
+      }));
+      
+      // Update the displayed entries if we're viewing the same date as we're saving to
       const selectedDateKey = formatDateLocal(selectedDate);
       if (currentDateKey === selectedDateKey) {
-        // Update both the displayed entries and the cache
-        setEntriesForDate(prevEntries => [newEntry, ...prevEntries]);
-        setEntriesCache(prev => ({
-          ...prev,
-          [currentDateKey]: [newEntry, ...(prev[currentDateKey] || [])]
-        }));
+        setEntriesForDate(updatedEntries);
       } else {
-        // If saving to a different date, just update the cache and switch to that date
-        setEntriesCache(prev => ({
-          ...prev,
-          [currentDateKey]: [newEntry, ...(prev[currentDateKey] || [])]
-        }));
+        // If saving to a different date, switch to that date
         setSelectedDate(savedDate);
       }
 
