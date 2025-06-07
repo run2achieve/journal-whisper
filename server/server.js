@@ -3,6 +3,8 @@ const cors = require("cors");
 const path = require("path");
 const multer = require("multer");
 const nodemailer = require("nodemailer"); // NEW: Added for email functionality
+const cron = require('node-cron'); // NEW: Added for daily summaries
+const moment = require('moment-timezone'); // NEW: Added for timezone handling
 const fetch = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
 const FormData = require("form-data");
 
@@ -58,13 +60,37 @@ app.use(express.static(path.join(__dirname, "../build")));
 
 // Gmail transporter setup
 const createGmailTransporter = () => {
-  return nodemailer.createTransport({
+  return nodemailer.createTransporter({
     service: 'gmail',
     auth: {
       user: process.env.GMAIL_USER,
       pass: process.env.GMAIL_APP_PASSWORD
     }
   });
+};
+
+// General email sending function
+const sendEmail = async (to, subject, htmlContent) => {
+  const transporter = createGmailTransporter();
+  
+  const mailOptions = {
+    from: {
+      name: 'Journal App',
+      address: process.env.GMAIL_USER
+    },
+    to: to,
+    subject: subject,
+    html: htmlContent
+  };
+
+  try {
+    const result = await transporter.sendMail(mailOptions);
+    console.log(`✅ Email sent successfully to: ${to}`);
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error(`❌ Failed to send email to ${to}:`, error);
+    throw error;
+  }
 };
 
 // Email templates
@@ -161,50 +187,379 @@ const getPasswordEmailHTML = (password) => `
 
 // Email sending functions
 const sendUsernameEmail = async (email, username) => {
-  const transporter = createGmailTransporter();
-  
-  const mailOptions = {
-    from: {
-      name: 'Journal App',
-      address: process.env.GMAIL_USER
-    },
-    to: email,
-    subject: '🔐 Your Journal App Username',
-    html: getUsernameEmailHTML(username)
-  };
-
-  try {
-    const result = await transporter.sendMail(mailOptions);
-    console.log('✅ Username email sent successfully to:', email);
-    return { success: true, messageId: result.messageId };
-  } catch (error) {
-    console.error('❌ Failed to send username email:', error);
-    throw error;
-  }
+  return await sendEmail(email, '🔐 Your Journal App Username', getUsernameEmailHTML(username));
 };
 
 const sendPasswordEmail = async (email, password) => {
-  const transporter = createGmailTransporter();
-  
-  const mailOptions = {
-    from: {
-      name: 'Journal App',
-      address: process.env.GMAIL_USER
-    },
-    to: email,
-    subject: '🔑 Your Journal App Password',
-    html: getPasswordEmailHTML(password)
-  };
+  return await sendEmail(email, '🔑 Your Journal App Password', getPasswordEmailHTML(password));
+};
 
+// =========================================
+// IMPROVED DAILY SUMMARY EMAIL SYSTEM
+// =========================================
+
+// Function to get yesterday's date in user's timezone
+const getYesterdayInTimezone = (timezone) => {
+  return moment.tz(timezone).subtract(1, 'day').format('YYYY-MM-DD');
+};
+
+// Function to get all registered users with email addresses from Google Sheets
+const getAllUsersWithEmails = async () => {
+  const users = [];
+  
   try {
-    const result = await transporter.sendMail(mailOptions);
-    console.log('✅ Password email sent successfully to:', email);
-    return { success: true, messageId: result.messageId };
+    console.log("🔍 Fetching users from Google Sheets...");
+    
+    // Call the users Google Apps Script to get all users
+    const response = await fetch(USERS_GOOGLE_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "getAllUsers"
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Users Google Apps Script error: ${response.status}`);
+    }
+
+    const responseText = await response.text();
+    let data;
+    
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error("❌ Failed to parse users response:", parseError);
+      return [];
+    }
+    
+    if (data.success && data.users) {
+      for (const user of data.users) {
+        if (user.email && user.email.includes('@')) {
+          users.push({
+            username: user.username,
+            email: user.email,
+            timezone: user.timezone || 'America/New_York', // Default timezone if not set
+          });
+        }
+      }
+    }
+    
+    console.log(`📊 Found ${users.length} users with email addresses`);
+    return users;
+    
   } catch (error) {
-    console.error('❌ Failed to send password email:', error);
-    throw error;
+    console.error('❌ Error fetching users for daily summaries:', error);
+    return [];
   }
 };
+
+// Function to get journal entries for a specific user and date
+const getJournalEntriesForUser = async (username, date) => {
+  try {
+    console.log(`📖 Getting journal entries for ${username} on ${date}`);
+    
+    // Call the journal entries Google Apps Script
+    const response = await fetch(GOOGLE_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        user: username, 
+        date: date, 
+        action: "getEntries" 
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Journal Google Apps Script error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const entries = data.entries || [];
+    
+    console.log(`📝 Found ${entries.length} journal entries for ${username} on ${date}`);
+    return entries;
+    
+  } catch (error) {
+    console.error(`❌ Error fetching journal entries for ${username}:`, error);
+    return [];
+  }
+};
+
+// Function to generate AI summary of journal entries
+const generateJournalSummary = async (entries, username, date) => {
+  try {
+    // Combine all entries into one text
+    const allEntries = entries.map(entry => `${entry.time}: ${entry.entry}`).join('\n\n');
+    
+    const prompt = `Please create a thoughtful, encouraging daily summary of these journal entries from ${date}. 
+
+Journal entries:
+${allEntries}
+
+Create a summary that:
+1. Highlights key themes, emotions, and events from the day
+2. Notes any patterns or insights
+3. Offers gentle, supportive reflection
+4. Keeps a warm, personal tone
+5. Is 2-3 paragraphs long
+6. Ends with an encouraging note for today
+
+Please write this as if you're a caring friend reflecting back on their day.`;
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'gpt-4',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 500,
+        temperature: 0.7
+      })
+    });
+
+    const data = await response.json();
+    
+    if (data.choices && data.choices[0]) {
+      return data.choices[0].message.content.trim();
+    } else {
+      throw new Error('No summary generated');
+    }
+    
+  } catch (error) {
+    console.error('❌ Error generating summary:', error);
+    return `Here's a reflection on your journal entries from ${date}:\n\n${entries.map(e => `${e.time}: ${e.entry}`).join('\n\n')}\n\nTake a moment to appreciate your thoughts and experiences from yesterday. Every day of journaling is a step toward greater self-awareness. 🌟`;
+  }
+};
+
+// Function to send daily summary email
+const sendDailySummaryEmail = async (user, summary, date) => {
+  try {
+    const subject = `📔 Your Journal Summary for ${moment(date).format('MMMM Do, YYYY')}`;
+    
+    const emailContent = `
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: 'Georgia', serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px; text-align: center; margin-bottom: 30px; }
+        .content { background: #f9f9f9; padding: 30px; border-radius: 10px; border-left: 5px solid #667eea; }
+        .summary { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin: 20px 0; }
+        .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
+        .quote { font-style: italic; color: #667eea; border-left: 3px solid #667eea; padding-left: 15px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🌅 Your Daily Journal Reflection</h1>
+        <p>A thoughtful look back at ${moment(date).format('MMMM Do, YYYY')}</p>
+    </div>
+    
+    <div class="content">
+        <h2>Hello ${user.username}! 👋</h2>
+        
+        <div class="summary">
+            ${summary.replace(/\n/g, '<br><br>')}
+        </div>
+        
+        <div class="quote">
+            "The unexamined life is not worth living." — Socrates
+        </div>
+        
+        <p>Keep journaling, keep growing! 🌱</p>
+    </div>
+    
+    <div class="footer">
+        <p>📔 This summary was generated from your journal entries</p>
+        <p>Continue your journaling journey at your journal app</p>
+    </div>
+</body>
+</html>`;
+
+    const result = await sendEmail(user.email, subject, emailContent);
+    
+    if (result.success) {
+      console.log(`✅ Daily summary sent to ${user.email}`);
+      return true;
+    } else {
+      console.error(`❌ Failed to send summary to ${user.email}:`, result.error);
+      return false;
+    }
+    
+  } catch (error) {
+    console.error(`❌ Error sending summary email to ${user.email}:`, error);
+    return false;
+  }
+};
+
+// NEW: Function to send "no entries" email
+const sendNoEntriesEmail = async (user, date) => {
+  try {
+    const subject = `📔 No Journal Entries for ${moment(date).format('MMMM Do, YYYY')}`;
+    
+    const emailContent = `
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: 'Georgia', serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #ffa726 0%, #ff7043 100%); color: white; padding: 30px; border-radius: 10px; text-align: center; margin-bottom: 30px; }
+        .content { background: #f9f9f9; padding: 30px; border-radius: 10px; border-left: 5px solid #ffa726; }
+        .message { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin: 20px 0; text-align: center; }
+        .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
+        .encouragement { font-style: italic; color: #ff7043; border-left: 3px solid #ff7043; padding-left: 15px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📝 No Updates for Today</h1>
+        <p>${moment(date).format('MMMM Do, YYYY')}</p>
+    </div>
+    
+    <div class="content">
+        <h2>Hello ${user.username}! 👋</h2>
+        
+        <div class="message">
+            <h3>🤔 No journal entries found for yesterday</h3>
+            <p>We didn't find any journal entries for ${moment(date).format('MMMM Do, YYYY')}. That's okay! Life gets busy sometimes.</p>
+        </div>
+        
+        <div class="encouragement">
+            "Every day is a new opportunity to reflect and grow. Why not start journaling today?"
+        </div>
+        
+        <p>Remember, even a few minutes of reflection can make a big difference in your day. We're here whenever you're ready to continue your journaling journey! 🌱</p>
+    </div>
+    
+    <div class="footer">
+        <p>📔 Your friendly journal app reminder</p>
+        <p>Continue your journaling journey at your journal app</p>
+    </div>
+</body>
+</html>`;
+
+    const result = await sendEmail(user.email, subject, emailContent);
+    
+    if (result.success) {
+      console.log(`✅ No entries email sent to ${user.email}`);
+      return true;
+    } else {
+      console.error(`❌ Failed to send no entries email to ${user.email}:`, result.error);
+      return false;
+    }
+    
+  } catch (error) {
+    console.error(`❌ Error sending no entries email to ${user.email}:`, error);
+    return false;
+  }
+};
+
+// NEW: Function to process daily summaries for a specific timezone
+const processDailySummariesForTimezone = async (targetTimezone) => {
+  try {
+    console.log(`🌍 Processing daily summaries for timezone: ${targetTimezone}`);
+    
+    // Get all users with email addresses
+    const allUsers = await getAllUsersWithEmails();
+    
+    // Filter users in the target timezone
+    const usersInTimezone = allUsers.filter(user => user.timezone === targetTimezone);
+    
+    if (usersInTimezone.length === 0) {
+      console.log(`ℹ️  No users found in timezone: ${targetTimezone}`);
+      return;
+    }
+    
+    console.log(`📧 Found ${usersInTimezone.length} users in ${targetTimezone}`);
+    
+    let summariesSent = 0;
+    let noEntriesEmailsSent = 0;
+    
+    for (const user of usersInTimezone) {
+      try {
+        // Get yesterday's date in user's timezone
+        const yesterday = getYesterdayInTimezone(user.timezone);
+        
+        // Get journal entries for yesterday
+        const entries = await getJournalEntriesForUser(user.username, yesterday);
+        
+        if (entries.length > 0) {
+          // User has entries - generate and send summary
+          console.log(`📝 Generating summary for ${user.username}...`);
+          
+          const summary = await generateJournalSummary(entries, user.username, yesterday);
+          const emailSent = await sendDailySummaryEmail(user, summary, yesterday);
+          
+          if (emailSent) {
+            summariesSent++;
+          }
+          
+        } else {
+          // User has no entries - send "no entries" email
+          console.log(`📭 No entries for ${user.username}, sending no-updates email...`);
+          
+          const emailSent = await sendNoEntriesEmail(user, yesterday);
+          
+          if (emailSent) {
+            noEntriesEmailsSent++;
+          }
+        }
+        
+        // Add delay between emails to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+      } catch (error) {
+        console.error(`❌ Error processing user ${user.username}:`, error);
+      }
+    }
+    
+    console.log(`✅ Completed processing ${targetTimezone}:`);
+    console.log(`   📔 ${summariesSent} journal summaries sent`);
+    console.log(`   📭 ${noEntriesEmailsSent} no-entries emails sent`);
+    
+  } catch (error) {
+    console.error(`❌ Error processing timezone ${targetTimezone}:`, error);
+  }
+};
+
+// NEW: Setup cron jobs for major timezones at 6 AM each
+const setupDailySummarySchedule = () => {
+  // Major timezones and their 6 AM in UTC
+  const timezoneSchedules = [
+    { timezone: 'Pacific/Auckland', cronTime: '0 18 * * *' },      // 6 AM NZDT = 6 PM UTC (previous day)
+    { timezone: 'Australia/Sydney', cronTime: '0 20 * * *' },     // 6 AM AEDT = 8 PM UTC (previous day)
+    { timezone: 'Asia/Tokyo', cronTime: '0 21 * * *' },           // 6 AM JST = 9 PM UTC (previous day)
+    { timezone: 'Asia/Shanghai', cronTime: '0 22 * * *' },        // 6 AM CST = 10 PM UTC (previous day)
+    { timezone: 'Asia/Kolkata', cronTime: '0 0 * * *' },          // 6 AM IST = 12:30 AM UTC
+    { timezone: 'Europe/London', cronTime: '0 6 * * *' },         // 6 AM GMT = 6 AM UTC
+    { timezone: 'Europe/Paris', cronTime: '0 5 * * *' },          // 6 AM CET = 5 AM UTC
+    { timezone: 'America/New_York', cronTime: '0 11 * * *' },     // 6 AM EST = 11 AM UTC
+    { timezone: 'America/Chicago', cronTime: '0 12 * * *' },      // 6 AM CST = 12 PM UTC
+    { timezone: 'America/Denver', cronTime: '0 13 * * *' },       // 6 AM MST = 1 PM UTC
+    { timezone: 'America/Los_Angeles', cronTime: '0 14 * * *' },  // 6 AM PST = 2 PM UTC
+    { timezone: 'Pacific/Honolulu', cronTime: '0 16 * * *' },     // 6 AM HST = 4 PM UTC
+  ];
+
+  console.log('📅 Setting up daily summary schedules for major timezones...');
+
+  timezoneSchedules.forEach(({ timezone, cronTime }) => {
+    cron.schedule(cronTime, async () => {
+      console.log(`⏰ 6 AM in ${timezone} - Processing daily summaries...`);
+      await processDailySummariesForTimezone(timezone);
+    });
+    
+    console.log(`   ✅ ${timezone}: scheduled for ${cronTime} (6 AM local time)`);
+  });
+
+  console.log('📅 Daily summary schedules initialized for all major timezones');
+};
+
+// Initialize the daily summary schedule
+setupDailySummarySchedule();
 
 // Health check endpoint
 app.get("/health", (req, res) => {
@@ -479,7 +834,7 @@ app.post("/register", async (req, res) => {
   try {
     console.log("📝 User registration request received:", req.body.username);
     
-    const { username, password, email, registrationDate } = req.body;
+    const { username, password, email, timezone, registrationDate } = req.body;
     
     // Validate required fields
     if (!username || !password || !email) {
@@ -500,6 +855,7 @@ app.post("/register", async (req, res) => {
       username,
       password, // This is the generated passcode
       email,
+      timezone: timezone || 'America/New_York', // Default timezone if not provided
       registrationDate: registrationDate || new Date().toISOString()
     };
 
@@ -796,6 +1152,170 @@ app.post('/test-email', async (req, res) => {
   }
 });
 
+// ========================================
+// NEW: DAILY SUMMARY ENDPOINTS
+// ========================================
+
+// Test endpoint to manually trigger daily summaries for all timezones
+app.post('/test-daily-summaries', async (req, res) => {
+  try {
+    console.log('🧪 Manual test of daily summaries triggered for all timezones');
+    
+    const testTimezones = ['America/New_York', 'Europe/London', 'Asia/Tokyo'];
+    
+    for (const timezone of testTimezones) {
+      console.log(`\n🌍 Testing timezone: ${timezone}`);
+      await processDailySummariesForTimezone(timezone);
+    }
+    
+    res.json({ 
+      success: true, 
+      message: `Daily summaries tested for ${testTimezones.length} timezones`,
+      timezones: testTimezones
+    });
+  } catch (error) {
+    console.error('❌ Test daily summaries error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Test endpoint to manually trigger daily summaries for a specific timezone
+app.post('/test-timezone-summaries', async (req, res) => {
+  try {
+    const { timezone } = req.body;
+    
+    if (!timezone) {
+      return res.status(400).json({ success: false, error: 'Timezone is required' });
+    }
+    
+    console.log(`🧪 Manual test of daily summaries for timezone: ${timezone}`);
+    await processDailySummariesForTimezone(timezone);
+    
+    res.json({ 
+      success: true, 
+      message: `Daily summaries processed for ${timezone}`,
+      timezone: timezone
+    });
+  } catch (error) {
+    console.error('❌ Test timezone summaries error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Endpoint to get summary for specific user and date (for testing)
+app.post('/get-user-summary', async (req, res) => {
+  try {
+    const { username, date } = req.body;
+    
+    if (!username || !date) {
+      return res.status(400).json({ success: false, error: 'Username and date required' });
+    }
+    
+    console.log(`🔍 Getting summary for ${username} on ${date}`);
+    
+    const entries = await getJournalEntriesForUser(username, date);
+    
+    if (entries.length === 0) {
+      return res.json({ success: true, entries: [], summary: 'No journal entries found for this date' });
+    }
+    
+    const summary = await generateJournalSummary(entries, username, date);
+    
+    res.json({
+      success: true,
+      entries: entries,
+      summary: summary,
+      date: date
+    });
+    
+  } catch (error) {
+    console.error('❌ Get user summary error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// NEW: Endpoint to update user timezone
+app.post('/update-timezone', async (req, res) => {
+  try {
+    const { username, timezone } = req.body;
+    
+    if (!username || !timezone) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Username and timezone are required' 
+      });
+    }
+
+    console.log(`🌍 Updating timezone for ${username} to ${timezone}`);
+
+    // Check if users Google Apps Script URL is configured
+    if (USERS_GOOGLE_SCRIPT_URL === "YOUR_NEW_GOOGLE_APPS_SCRIPT_URL_FOR_USERS_SHEET") {
+      console.log('⚠️ Users database not configured, skipping timezone update');
+      return res.json({
+        success: true,
+        message: 'Timezone update skipped - users database not configured'
+      });
+    }
+
+    // Call USERS DATABASE Google Apps Script to update timezone
+    const response = await fetch(USERS_GOOGLE_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "updateTimezone",
+        username: username,
+        timezone: timezone,
+        lastLogin: new Date().toISOString()
+      }),
+    });
+
+    const responseText = await response.text();
+    console.log("📥 Users Google Apps Script timezone update response:", responseText);
+
+    if (!response.ok) {
+      console.error("❌ Users Google Apps Script error:", response.status, responseText);
+      return res.status(500).json({
+        success: false,
+        error: "Timezone update service unavailable"
+      });
+    }
+
+    let result;
+    try {
+      result = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error("❌ Failed to parse timezone update response:", parseError);
+      return res.status(500).json({
+        success: false,
+        error: "Invalid response from timezone update service"
+      });
+    }
+
+    if (result.success) {
+      console.log(`✅ Timezone updated successfully for ${username} to ${timezone}`);
+      res.json({
+        success: true,
+        message: `Timezone updated to ${timezone}`,
+        username: username,
+        timezone: timezone
+      });
+    } else {
+      console.log(`❌ Timezone update failed for ${username}:`, result.error);
+      res.status(400).json({
+        success: false,
+        error: result.error || "Timezone update failed"
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Timezone update error:', error);
+    res.status(500).json({
+      success: false,
+      error: "Timezone update failed: " + error.message
+    });
+  }
+});
+
 // Catch-all handler to serve React app for all other routes (supports React Router)
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "../build/index.html"));
@@ -807,6 +1327,9 @@ app.listen(PORT, () => {
   console.log(`📊 Journal entries: Using existing Google Sheet`);
   console.log(`👥 User registration: Using ${USERS_GOOGLE_SCRIPT_URL === "YOUR_NEW_GOOGLE_APPS_SCRIPT_URL_FOR_USERS_SHEET" ? "NOT CONFIGURED" : "configured"} Users Google Sheet`);
   console.log(`📧 Email system: ${process.env.GMAIL_USER ? `Configured with ${process.env.GMAIL_USER}` : "NOT CONFIGURED"}`);
+  console.log('📅 Daily summary email system initialized');
+  console.log('⏰ Scheduled to run at 6 AM in each major timezone');
+  console.log('📧 Will send summaries OR no-entries emails to all users');
 }).on("error", (err) => {
   console.error("Failed to start server:", err);
 });

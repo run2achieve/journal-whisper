@@ -33,6 +33,23 @@ const generateRandomPasscode = () => {
   return result;
 };
 
+// NEW: Function to get user's current timezone
+const getCurrentTimezone = () => {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+};
+
+// NEW: Function to get timezone display name
+const getTimezoneDisplayName = () => {
+  const timezone = getCurrentTimezone();
+  const now = new Date();
+  const offset = now.getTimezoneOffset();
+  const offsetHours = Math.abs(Math.floor(offset / 60));
+  const offsetMinutes = Math.abs(offset % 60);
+  const sign = offset <= 0 ? '+' : '-';
+  
+  return `${timezone} (UTC${sign}${offsetHours.toString().padStart(2, '0')}:${offsetMinutes.toString().padStart(2, '0')})`;
+};
+
 export default function Login({ onLogin }) {
   const [mode, setMode] = useState("login"); // "login" or "register"
   const [username, setUsername] = useState("");
@@ -50,6 +67,9 @@ export default function Login({ onLogin }) {
   const [dynamicUsers, setDynamicUsers] = useState({});
   const [googleSheetsStatus, setGoogleSheetsStatus] = useState("unknown"); // "working", "failed", "unknown"
 
+  // NEW: Timezone state
+  const [currentTimezone, setCurrentTimezone] = useState(getCurrentTimezone());
+
   // Load registered users from localStorage on component mount (backup)
   useEffect(() => {
     const stored = localStorage.getItem('registeredUsers');
@@ -62,13 +82,60 @@ export default function Login({ onLogin }) {
         console.error("Error loading registered users:", e);
       }
     }
-  }, []);
+
+    // NEW: Update timezone on component mount and set up interval to check for changes
+    const updateTimezone = () => {
+      const newTimezone = getCurrentTimezone();
+      if (newTimezone !== currentTimezone) {
+        setCurrentTimezone(newTimezone);
+        console.log("🌍 Timezone changed to:", newTimezone);
+      }
+    };
+
+    // Check timezone every minute in case user travels or changes location
+    const timezoneInterval = setInterval(updateTimezone, 60000);
+    
+    return () => clearInterval(timezoneInterval);
+  }, [currentTimezone]);
 
   // Save registered users to localStorage (backup)
   const saveRegisteredUsers = (users) => {
     localStorage.setItem('registeredUsers', JSON.stringify(users));
     setDynamicUsers(users);
     console.log("💾 Saved users to localStorage:", users);
+  };
+
+  // NEW: Function to update user timezone in backend
+  const updateUserTimezone = async (username, timezone) => {
+    try {
+      const UPDATE_TIMEZONE_URL = window.location.hostname === "localhost"
+        ? "http://localhost:8090/update-timezone"
+        : "https://journal-whisper.onrender.com/update-timezone";
+
+      console.log(`🌍 Updating timezone for ${username} to ${timezone}`);
+
+      const response = await fetch(UPDATE_TIMEZONE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: username,
+          timezone: timezone
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
+          console.log(`✅ Timezone updated successfully for ${username}`);
+        } else {
+          console.log(`⚠️ Timezone update failed for ${username}:`, result.error);
+        }
+      } else {
+        console.log(`⚠️ Timezone update request failed for ${username}`);
+      }
+    } catch (error) {
+      console.log(`⚠️ Timezone update error for ${username}:`, error.message);
+    }
   };
 
   // ========================================
@@ -183,71 +250,129 @@ export default function Login({ onLogin }) {
     }
   };
 
+  // NEW: Test daily summary system
+  const testDailySummary = async () => {
+    try {
+      const TEST_SUMMARY_URL = window.location.hostname === "localhost"
+        ? "http://localhost:8090/test-daily-summaries"
+        : "https://journal-whisper.onrender.com/test-daily-summaries";
+
+      const response = await fetch(TEST_SUMMARY_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const result = await response.json();
+      
+      if (response.ok && result.success) {
+        console.log("✅ Daily summary test completed");
+        alert("✅ Daily summary system test completed! Check console for details.");
+      } else {
+        console.error("❌ Daily summary test failed:", result.error);
+        alert("❌ Daily summary test failed: " + result.error);
+      }
+      
+    } catch (error) {
+      console.error("❌ Daily summary test error:", error);
+      alert("❌ Daily summary test error: " + error.message);
+    }
+  };
+
+  // UPDATED: Login function with timezone tracking
   const handleLogin = async (e) => {
     e.preventDefault();
     
     console.log("🔍 Attempting login with username:", username);
+    console.log("🌍 Current user timezone:", currentTimezone);
+    
+    let loginSuccessful = false;
+    let loginMethod = "";
     
     // Step 1: Check hard-coded users first (fastest)
     if (USERS[username] && USERS[username] === password) {
       console.log("✅ Login successful with hard-coded user");
       setError("");
-      onLogin(username);
-      return;
+      loginSuccessful = true;
+      loginMethod = "hard-coded";
     }
     
     // Step 2: Check localStorage registered users (fast backup)
-    if (dynamicUsers[username] && dynamicUsers[username].passcode === password) {
+    else if (dynamicUsers[username] && dynamicUsers[username].passcode === password) {
       console.log("✅ Login successful with localStorage user");
       setError("");
-      onLogin(username);
-      return;
+      loginSuccessful = true;
+      loginMethod = "localStorage";
     }
     
     // Step 3: Check Google Sheets for registered users (if backend configured)
-    try {
-      console.log("🔍 Checking Google Sheets for user credentials...");
-      
-      const LOGIN_CHECK_URL =
-        window.location.hostname === "localhost"
-          ? "http://localhost:8090/checkUser"
-          : "https://journal-whisper.onrender.com/checkUser";
+    else {
+      try {
+        console.log("🔍 Checking Google Sheets for user credentials...");
+        
+        const LOGIN_CHECK_URL =
+          window.location.hostname === "localhost"
+            ? "http://localhost:8090/checkUser"
+            : "https://journal-whisper.onrender.com/checkUser";
 
-      const response = await fetch(LOGIN_CHECK_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: username,
-          passcode: password
-        }),
-      });
+        const response = await fetch(LOGIN_CHECK_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: username,
+            passcode: password
+          }),
+        });
 
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success) {
-          console.log("✅ Login successful with Google Sheets user");
-          setGoogleSheetsStatus("working");
-          setError("");
-          onLogin(username);
-          return;
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success) {
+            console.log("✅ Login successful with Google Sheets user");
+            setGoogleSheetsStatus("working");
+            setError("");
+            loginSuccessful = true;
+            loginMethod = "google-sheets";
+          } else {
+            console.log("❌ Invalid credentials in Google Sheets");
+            setGoogleSheetsStatus("working");
+          }
         } else {
-          console.log("❌ Invalid credentials in Google Sheets");
-          setGoogleSheetsStatus("working");
+          console.log("⚠️ Google Sheets backend error:", response.status);
+          setGoogleSheetsStatus("failed");
         }
-      } else {
-        console.log("⚠️ Google Sheets backend error:", response.status);
+        
+      } catch (error) {
+        console.log("⚠️ Backend login check failed:", error.message);
         setGoogleSheetsStatus("failed");
       }
-      
-    } catch (error) {
-      console.log("⚠️ Backend login check failed:", error.message);
-      setGoogleSheetsStatus("failed");
     }
     
-    setError("Invalid username or password");
+    // NEW: If login successful, update timezone and proceed
+    if (loginSuccessful) {
+      // Update timezone for registered users (skip hard-coded users)
+      if (loginMethod === "google-sheets" || loginMethod === "localStorage") {
+        await updateUserTimezone(username, currentTimezone);
+        
+        // Also update localStorage if it's a localStorage user
+        if (loginMethod === "localStorage") {
+          const updatedUsers = {
+            ...dynamicUsers,
+            [username]: {
+              ...dynamicUsers[username],
+              timezone: currentTimezone,
+              lastLogin: new Date().toISOString()
+            }
+          };
+          saveRegisteredUsers(updatedUsers);
+        }
+      }
+      
+      onLogin(username);
+    } else {
+      setError("Invalid username or password");
+    }
   };
 
-  // UPDATED: Registration function with email system integration
+  // UPDATED: Registration function with timezone integration
   const handleRegister = async (e) => {
     e.preventDefault();
     setError("");
@@ -282,6 +407,7 @@ export default function Login({ onLogin }) {
       const newPasscode = generateRandomPasscode();
 
       console.log("🎯 Generated credentials:", { username: newUsername, passcode: newPasscode });
+      console.log("🌍 User timezone:", currentTimezone);
 
       let backendSuccess = false;
       let backendError = null;
@@ -301,7 +427,7 @@ export default function Login({ onLogin }) {
             username: newUsername,
             password: newPasscode,
             email: email,
-            // REMOVED: fullName: email, (no longer needed)
+            timezone: currentTimezone, // NEW: Include current timezone
             registrationDate: new Date().toISOString(),
           }),
         });
@@ -340,13 +466,14 @@ export default function Login({ onLogin }) {
         [newUsername]: {
           passcode: newPasscode,
           email: email,
+          timezone: currentTimezone, // NEW: Include timezone in localStorage
           registrationDate: new Date().toISOString()
         }
       };
       
       saveRegisteredUsers(updatedUsers);
 
-      // 🆕 NEW: Try to send credential emails
+      // Try to send credential emails
       console.log("📧 Attempting to send credential emails...");
       const emailResult = await sendCredentialEmails(email, newUsername, newPasscode);
       
@@ -419,7 +546,7 @@ export default function Login({ onLogin }) {
     }
   };
 
-  // Admin Panel Component for email testing
+  // UPDATED: Admin Panel Component with daily summary testing
   const AdminPanel = () => (
     <div style={{
       marginTop: "1rem",
@@ -430,6 +557,9 @@ export default function Login({ onLogin }) {
     }}>
       <div style={{ fontWeight: "bold", marginBottom: "0.5rem" }}>
         🔧 Admin Tools:
+      </div>
+      <div style={{ marginBottom: "0.5rem", fontSize: "0.8rem", color: "#666" }}>
+        🌍 Current timezone: {getTimezoneDisplayName()}
       </div>
       <button
         onClick={testEmailConfiguration}
@@ -459,7 +589,22 @@ export default function Login({ onLogin }) {
           fontSize: "0.8rem"
         }}
       >
-        Send Bulk Emails to All Users
+        Send Bulk Emails
+      </button>
+      <button
+        onClick={testDailySummary}
+        style={{
+          margin: "0.25rem",
+          padding: "0.5rem 1rem",
+          backgroundColor: "#9c27b0",
+          color: "white",
+          border: "none",
+          borderRadius: "4px",
+          cursor: "pointer",
+          fontSize: "0.8rem"
+        }}
+      >
+        Test Daily Summaries
       </button>
     </div>
   );
@@ -583,7 +728,8 @@ export default function Login({ onLogin }) {
               placeholder="Enter your email address"
             />
             <div style={{ fontSize: "0.8rem", color: "#666", marginTop: "0.3rem" }}>
-              We'll generate a username and passcode for you
+              We'll generate a username and passcode for you<br/>
+              <span style={{ color: "#9c27b0" }}>🌍 Your timezone: {getTimezoneDisplayName()}</span>
             </div>
           </div>
 
@@ -783,6 +929,7 @@ export default function Login({ onLogin }) {
           Hard-coded users: {Object.keys(USERS).length}<br/>
           Registered users: {Object.keys(dynamicUsers).length}<br/>
           Backend status: {getBackendStatusIndicator()}<br/>
+          Current timezone: {currentTimezone}<br/>
           {Object.keys(dynamicUsers).length > 0 && (
             <div>Last registered: {Object.keys(dynamicUsers)[Object.keys(dynamicUsers).length - 1]}</div>
           )}
@@ -813,7 +960,7 @@ export default function Login({ onLogin }) {
         </div>
       </div>
 
-      {/* NEW: Admin Panel for Email Testing */}
+      {/* Updated Admin Panel */}
       <AdminPanel />
     </div>
   );
