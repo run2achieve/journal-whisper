@@ -45,6 +45,12 @@ export default function Journal({ user, onLogout }) {
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState(null);
 
+  // Summary states
+  const [showSummaryModal, setShowSummaryModal] = useState(false);
+  const [summaryData, setSummaryData] = useState(null);
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+  const [summaryError, setSummaryError] = useState(null);
+
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const countdownIntervalRef = useRef(null);
@@ -202,6 +208,247 @@ export default function Journal({ user, onLogout }) {
 
   const handleRefreshEntries = () => {
     fetchEntriesForDate(selectedDate, true);
+  };
+
+  // Summary functionality
+  const generateSummary = async () => {
+    const dateKey = formatDateLocal(selectedDate);
+    
+    if (entriesForDate.length === 0) {
+      setSummaryError("No entries found for this date to summarize.");
+      setShowSummaryModal(true);
+      return;
+    }
+
+    setIsGeneratingSummary(true);
+    setSummaryError(null);
+
+    const SUMMARY_API_URL =
+      window.location.hostname === "localhost"
+        ? "http://localhost:8090/generateSummary"
+        : "https://journal-whisper.onrender.com/generateSummary";
+
+    try {
+      console.log(`🤖 Generating summary for ${user} on ${dateKey}`);
+      
+      const response = await fetch(SUMMARY_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user: user,
+          date: dateKey
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to generate summary: ${response.status} ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log("✅ Summary generated:", data);
+      
+      setSummaryData({
+        summary: data.summary,
+        generatedAt: data.generatedAt,
+        isExisting: data.isExisting || false,
+        entriesCount: data.entriesCount || entriesForDate.length,
+        date: dateKey
+      });
+      
+      setShowSummaryModal(true);
+      
+      // Show success message
+      setSaveMessage(data.isExisting ? "Existing summary loaded!" : "New summary generated!");
+      setShowToast(true);
+      
+    } catch (error) {
+      console.error("❌ Error generating summary:", error);
+      setSummaryError(error.message);
+      setShowSummaryModal(true);
+    } finally {
+      setIsGeneratingSummary(false);
+    }
+  };
+
+  const SummaryModal = () => {
+    if (!showSummaryModal) return null;
+
+    return (
+      <div
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0, 0, 0, 0.5)",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          zIndex: 10000,
+          padding: "2rem",
+        }}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            setShowSummaryModal(false);
+            setSummaryData(null);
+            setSummaryError(null);
+          }
+        }}
+      >
+        <div
+          style={{
+            backgroundColor: "white",
+            borderRadius: "12px",
+            padding: "2rem",
+            maxWidth: "600px",
+            width: "100%",
+            maxHeight: "80vh",
+            overflow: "auto",
+            boxShadow: "0 8px 32px rgba(0, 0, 0, 0.3)",
+            position: "relative",
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Close button */}
+          <button
+            onClick={() => {
+              setShowSummaryModal(false);
+              setSummaryData(null);
+              setSummaryError(null);
+            }}
+            style={{
+              position: "absolute",
+              top: "1rem",
+              right: "1rem",
+              background: "none",
+              border: "none",
+              fontSize: "1.5rem",
+              cursor: "pointer",
+              color: "#666",
+              padding: "0.5rem",
+              borderRadius: "50%",
+              width: "40px",
+              height: "40px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            title="Close"
+          >
+            ✕
+          </button>
+
+          {/* Modal content */}
+          <div style={{ marginRight: "2rem" }}>
+            <h2 style={{ 
+              margin: "0 0 1rem 0", 
+              color: "#333",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem"
+            }}>
+              <span>📝</span>
+              Daily Summary - {summaryData?.date || formatDateLocal(selectedDate)}
+            </h2>
+
+            {summaryError ? (
+              <div style={{
+                backgroundColor: "#fee",
+                color: "#c33",
+                padding: "1rem",
+                borderRadius: "8px",
+                border: "1px solid #fcc",
+                textAlign: "center"
+              }}>
+                <div style={{ fontSize: "1.2rem", marginBottom: "0.5rem" }}>⚠️</div>
+                <div style={{ fontWeight: "bold", marginBottom: "0.5rem" }}>
+                  Unable to Generate Summary
+                </div>
+                <div style={{ fontSize: "0.9rem" }}>
+                  {summaryError}
+                </div>
+              </div>
+            ) : summaryData ? (
+              <>
+                {/* Summary metadata */}
+                <div style={{
+                  backgroundColor: "#f8f9fa",
+                  padding: "0.75rem",
+                  borderRadius: "6px",
+                  marginBottom: "1.5rem",
+                  fontSize: "0.9rem",
+                  color: "#666"
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem" }}>
+                    <span>
+                      📊 Based on <strong>{summaryData.entriesCount}</strong> {summaryData.entriesCount === 1 ? 'entry' : 'entries'}
+                    </span>
+                    <span>
+                      {summaryData.isExisting ? "📚 Previously generated" : "✨ Newly generated"}
+                    </span>
+                  </div>
+                  {summaryData.generatedAt && (
+                    <div style={{ marginTop: "0.5rem", fontSize: "0.8rem" }}>
+                      Generated: {new Date(summaryData.generatedAt).toLocaleString()}
+                    </div>
+                  )}
+                </div>
+
+                {/* Summary content */}
+                <div style={{
+                  backgroundColor: "#fff",
+                  padding: "1.5rem",
+                  borderRadius: "8px",
+                  border: "2px solid #e3f2fd",
+                  lineHeight: "1.6",
+                  fontSize: "1rem"
+                }}>
+                  <div style={{ 
+                    whiteSpace: "pre-wrap",
+                    color: "#333"
+                  }}>
+                    {summaryData.summary}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div style={{
+                  marginTop: "1.5rem",
+                  textAlign: "center"
+                }}>
+                  <button
+                    onClick={() => {
+                      setShowSummaryModal(false);
+                      setSummaryData(null);
+                      setSummaryError(null);
+                    }}
+                    style={{
+                      padding: "0.75rem 2rem",
+                      fontSize: "1rem",
+                      backgroundColor: "#2196f3",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "8px",
+                      cursor: "pointer",
+                      fontWeight: "600",
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div style={{ textAlign: "center", padding: "2rem" }}>
+                <div style={{ fontSize: "1.2rem", marginBottom: "1rem" }}>🤖</div>
+                <div>Loading summary...</div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   // CSV Download functionality
@@ -1138,22 +1385,56 @@ export default function Journal({ user, onLogout }) {
               </span>
             )}
           </h3>
-          <button
-            onClick={handleRefreshEntries}
-            disabled={isLoadingEntries || isRefreshingEntries}
-            style={{
-              padding: "0.4rem 0.8rem",
-              fontSize: "0.8rem",
-              cursor: isLoadingEntries || isRefreshingEntries ? "not-allowed" : "pointer",
-              borderRadius: "6px",
-              border: "1px solid #888",
-              backgroundColor: "#f0f0f0",
-              color: "#333",
-            }}
-            title="Refresh entries"
-          >
-            🔄 Refresh
-          </button>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            {entriesForDate.length > 0 && (
+              <button
+                onClick={generateSummary}
+                disabled={isGeneratingSummary || isLoadingEntries}
+                style={{
+                  padding: "0.4rem 0.8rem",
+                  fontSize: "0.8rem",
+                  cursor: isGeneratingSummary || isLoadingEntries ? "not-allowed" : "pointer",
+                  borderRadius: "6px",
+                  border: "1px solid #2196f3",
+                  backgroundColor: isGeneratingSummary ? "#e3f2fd" : "#2196f3",
+                  color: isGeneratingSummary ? "#666" : "white",
+                  fontWeight: "600",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.3rem"
+                }}
+                title="Generate AI summary of this day's entries"
+              >
+                {isGeneratingSummary ? (
+                  <>
+                    <span>🤖</span>
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <span>📝</span>
+                    Summarize
+                  </>
+                )}
+              </button>
+            )}
+            <button
+              onClick={handleRefreshEntries}
+              disabled={isLoadingEntries || isRefreshingEntries}
+              style={{
+                padding: "0.4rem 0.8rem",
+                fontSize: "0.8rem",
+                cursor: isLoadingEntries || isRefreshingEntries ? "not-allowed" : "pointer",
+                borderRadius: "6px",
+                border: "1px solid #888",
+                backgroundColor: "#f0f0f0",
+                color: "#333",
+              }}
+              title="Refresh entries"
+            >
+              🔄 Refresh
+            </button>
+          </div>
         </div>
 
         {fetchError && (
@@ -1244,6 +1525,7 @@ export default function Journal({ user, onLogout }) {
         )}
       </div>
 
+      <SummaryModal />
       <DebugSection />
     </div>
   );
