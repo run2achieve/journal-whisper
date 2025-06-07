@@ -46,7 +46,7 @@ export default function Login({ onLogin }) {
   const [generatedPasscode, setGeneratedPasscode] = useState("");
   const [showPasscode, setShowPasscode] = useState(false);
   
-  // Dynamic users (loaded from backend/storage)
+  // Dynamic users (loaded from localStorage only)
   const [dynamicUsers, setDynamicUsers] = useState({});
 
   // Load registered users from localStorage on component mount
@@ -54,7 +54,9 @@ export default function Login({ onLogin }) {
     const stored = localStorage.getItem('registeredUsers');
     if (stored) {
       try {
-        setDynamicUsers(JSON.parse(stored));
+        const users = JSON.parse(stored);
+        console.log("🔍 Loaded users from localStorage:", users);
+        setDynamicUsers(users);
       } catch (e) {
         console.error("Error loading registered users:", e);
       }
@@ -65,20 +67,40 @@ export default function Login({ onLogin }) {
   const saveRegisteredUsers = (users) => {
     localStorage.setItem('registeredUsers', JSON.stringify(users));
     setDynamicUsers(users);
+    console.log("💾 Saved users to localStorage:", users);
   };
 
   const handleLogin = (e) => {
     e.preventDefault();
     
-    // Check both hard-coded users and dynamically registered users
-    const allUsers = { ...USERS, ...dynamicUsers };
+    console.log("🔍 DEBUG: Attempting login with username:", username, "password:", password);
+    console.log("🔍 DEBUG: Hard-coded users:", USERS);
+    console.log("🔍 DEBUG: Dynamic users from localStorage:", dynamicUsers);
     
-    if (allUsers[username] && allUsers[username] === password) {
+    // Check hard-coded users first
+    if (USERS[username] && USERS[username] === password) {
+      console.log("✅ Login successful with hard-coded user");
       setError("");
       onLogin(username);
-    } else {
-      setError("Invalid username or password");
+      return;
     }
+    
+    // Check localStorage registered users
+    if (dynamicUsers[username]) {
+      console.log("🔍 Found user in localStorage:", dynamicUsers[username]);
+      if (dynamicUsers[username].passcode === password) {
+        console.log("✅ Login successful with registered user");
+        setError("");
+        onLogin(username);
+        return;
+      } else {
+        console.log("❌ Passcode mismatch. Expected:", dynamicUsers[username].passcode, "Got:", password);
+      }
+    } else {
+      console.log("❌ User not found in localStorage");
+    }
+    
+    setError("Invalid username or password");
   };
 
   const handleRegister = async (e) => {
@@ -117,49 +139,15 @@ export default function Login({ onLogin }) {
       const newUsername = `user_${randomPrefix}${timestamp}`;
       const newPasscode = generateRandomPasscode();
 
-      // Prepare registration data
-      const registrationData = {
-        username: newUsername,
-        email: email,
-        passcode: newPasscode,
-        registrationDate: new Date().toISOString(),
-      };
+      console.log("🎯 Generated credentials:", { username: newUsername, passcode: newPasscode });
 
-      // Try to save to backend (optional - falls back to localStorage if backend fails)
-      try {
-        const REGISTER_API_URL =
-          window.location.hostname === "localhost"
-            ? "http://localhost:8090/register"
-            : "https://journal-whisper.onrender.com/register";
-
-        const response = await fetch(REGISTER_API_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            username: newUsername,
-            password: newPasscode,
-            email: email,
-            fullName: email, // Use email as full name for simplicity
-            registrationDate: registrationData.registrationDate,
-          }),
-        });
-
-        if (response.ok) {
-          console.log("✅ User saved to backend successfully");
-        } else {
-          console.log("⚠️ Backend save failed, using localStorage only");
-        }
-      } catch (backendError) {
-        console.log("⚠️ Backend not available, using localStorage only");
-      }
-
-      // Save to localStorage (always works)
+      // Save to localStorage (primary storage for now)
       const updatedUsers = {
         ...dynamicUsers,
         [newUsername]: {
           passcode: newPasscode,
           email: email,
-          registrationDate: registrationData.registrationDate
+          registrationDate: new Date().toISOString()
         }
       };
       
@@ -172,6 +160,8 @@ export default function Login({ onLogin }) {
       
       setSuccess(`Registration successful! Your username is "${newUsername}". Please save your passcode securely.`);
       setEmail("");
+
+      console.log("✅ Registration completed successfully");
 
     } catch (error) {
       console.error("Registration error:", error);
@@ -487,22 +477,24 @@ export default function Login({ onLogin }) {
         </div>
       )}
 
-      {/* Info Section */}
+      {/* Debug Info */}
       <div style={{
         marginTop: "2rem",
         padding: "1rem",
-        backgroundColor: "#f5f5f5",
+        backgroundColor: "#f0f0f0",
         borderRadius: "6px",
-        fontSize: "0.85rem",
+        fontSize: "0.8rem",
         color: "#666"
       }}>
         <div style={{ fontWeight: "bold", marginBottom: "0.5rem" }}>
-          🔐 Login Options:
+          🔍 Debug Info:
         </div>
         <div>
-          • <strong>Existing users:</strong> Use your assigned username & password<br/>
-          • <strong>New users:</strong> Register with email to get credentials<br/>
-          • <strong>Features:</strong> Voice entries, AI summaries, CSV export
+          Hard-coded users: {Object.keys(USERS).length}<br/>
+          Registered users: {Object.keys(dynamicUsers).length}<br/>
+          {Object.keys(dynamicUsers).length > 0 && (
+            <div>Last registered: {Object.keys(dynamicUsers)[Object.keys(dynamicUsers).length - 1]}</div>
+          )}
         </div>
       </div>
     </div>
