@@ -37,6 +37,13 @@ export default function Journal({ user, onLogout }) {
   const [isLoadingEntries, setIsLoadingEntries] = useState(false);
   const [isRefreshingEntries, setIsRefreshingEntries] = useState(false);
   const [fetchError, setFetchError] = useState(null);
+  
+  // CSV Download states
+  const [showDownloadSection, setShowDownloadSection] = useState(false);
+  const [downloadFromDate, setDownloadFromDate] = useState("");
+  const [downloadToDate, setDownloadToDate] = useState("");
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState(null);
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -196,6 +203,174 @@ export default function Journal({ user, onLogout }) {
   const handleRefreshEntries = () => {
     fetchEntriesForDate(selectedDate, true);
   };
+
+  // CSV Download functionality
+  const downloadEntriesAsCSV = async () => {
+    if (!downloadFromDate || !downloadToDate) {
+      setDownloadError("Please select both from and to dates");
+      return;
+    }
+
+    if (new Date(downloadFromDate) > new Date(downloadToDate)) {
+      setDownloadError("From date must be before or equal to To date");
+      return;
+    }
+
+    setIsDownloading(true);
+    setDownloadError(null);
+
+    try {
+      console.log("📥 Starting CSV download for date range:", downloadFromDate, "to", downloadToDate);
+
+      // Get all entries for the date range
+      const allEntries = [];
+      const startDate = new Date(downloadFromDate);
+      const endDate = new Date(downloadToDate);
+      
+      // Loop through each date in the range
+      for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
+        const dateKey = formatDateLocal(date);
+        console.log("Fetching entries for date:", dateKey);
+
+        const FETCH_API_URL =
+          window.location.hostname === "localhost"
+            ? "http://localhost:8090/getEntries"
+            : "https://journal-whisper.onrender.com/getEntries";
+
+        try {
+          const response = await fetch(FETCH_API_URL, {
+            method: "POST",
+            headers: { 
+              "Content-Type": "application/json",
+              "Cache-Control": "no-cache, no-store, must-revalidate"
+            },
+            body: JSON.stringify({
+              user: user,
+              date: dateKey,
+              timestamp: Date.now()
+            }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            if (data.entries && data.entries.length > 0) {
+              // Add date to each entry and collect them
+              const entriesWithDate = data.entries.map(entry => ({
+                date: dateKey,
+                time: entry.time,
+                entry: entry.entry,
+                user: entry.user
+              }));
+              allEntries.push(...entriesWithDate);
+              console.log(`Found ${data.entries.length} entries for ${dateKey}`);
+            }
+          }
+        } catch (error) {
+          console.error(`Error fetching entries for ${dateKey}:`, error);
+        }
+      }
+
+      console.log("Total entries collected:", allEntries.length);
+
+      if (allEntries.length === 0) {
+        setDownloadError("No entries found for the selected date range");
+        return;
+      }
+
+      // Sort entries by date and time
+      allEntries.sort((a, b) => {
+        const dateCompare = a.date.localeCompare(b.date);
+        if (dateCompare !== 0) return dateCompare;
+        return a.time.localeCompare(b.time);
+      });
+
+      // Create CSV content
+      const csvHeaders = "Date,Time,Entry,User\n";
+      const csvRows = allEntries.map(entry => {
+        // Escape quotes and wrap fields with quotes if they contain commas or quotes
+        const escapeCSV = (field) => {
+          const str = String(field || "");
+          if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+            return `"${str.replace(/"/g, '""')}"`;
+          }
+          return str;
+        };
+
+        return `${escapeCSV(entry.date)},${escapeCSV(entry.time)},${escapeCSV(entry.entry)},${escapeCSV(entry.user)}`;
+      }).join("\n");
+
+      const csvContent = csvHeaders + csvRows;
+
+      // Create and download the file
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      
+      if (link.download !== undefined) {
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        
+        // Create filename with date range and user
+        const fromDateFormatted = downloadFromDate.replace(/-/g, "");
+        const toDateFormatted = downloadToDate.replace(/-/g, "");
+        const filename = `journal-entries-${user}-${fromDateFormatted}-to-${toDateFormatted}.csv`;
+        
+        link.setAttribute("download", filename);
+        link.style.visibility = "hidden";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        console.log("✅ CSV file downloaded successfully:", filename);
+        setSaveMessage(`Downloaded ${allEntries.length} entries as CSV file!`);
+        setShowToast(true);
+      }
+
+    } catch (error) {
+      console.error("❌ Error downloading CSV:", error);
+      setDownloadError("Failed to download CSV: " + error.message);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  // Get date range options (last 6 months to future 1 month)
+  const getDateOptions = () => {
+    const options = [];
+    const today = new Date();
+    
+    // Go back 6 months
+    const startDate = new Date(today);
+    startDate.setMonth(startDate.getMonth() - 6);
+    
+    // Go forward 1 month
+    const endDate = new Date(today);
+    endDate.setMonth(endDate.getMonth() + 1);
+    
+    for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
+      const dateKey = formatDateLocal(date);
+      const displayDate = date.toLocaleDateString("en-US", { 
+        weekday: "short", 
+        year: "numeric", 
+        month: "short", 
+        day: "numeric" 
+      });
+      options.push({ value: dateKey, label: displayDate });
+    }
+    
+    return options;
+  };
+
+  // Initialize download dates to current month
+  useEffect(() => {
+    if (!downloadFromDate || !downloadToDate) {
+      const today = new Date();
+      const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      
+      setDownloadFromDate(formatDateLocal(firstDayOfMonth));
+      setDownloadToDate(formatDateLocal(lastDayOfMonth));
+    }
+  }, [downloadFromDate, downloadToDate]);
 
   const DebugSection = () => {
     const testAPICall = async () => {
@@ -744,6 +919,169 @@ export default function Journal({ user, onLogout }) {
       </form>
 
       <hr style={{ margin: "2rem 0", borderColor: "#ccc" }} />
+      
+      {/* CSV Download Section */}
+      <div style={{ marginBottom: "2rem" }}>
+        <div style={{ 
+          display: "flex", 
+          justifyContent: "space-between", 
+          alignItems: "center", 
+          marginBottom: "1rem" 
+        }}>
+          <h3 style={{ margin: 0, color: "#333" }}>📥 Download Entries</h3>
+          <button
+            onClick={() => setShowDownloadSection(!showDownloadSection)}
+            style={{
+              padding: "0.5rem 1rem",
+              fontSize: "0.9rem",
+              cursor: "pointer",
+              borderRadius: "6px",
+              border: "1px solid #888",
+              backgroundColor: showDownloadSection ? "#e0e0e0" : "#f0f0f0",
+              color: "#333",
+            }}
+          >
+            {showDownloadSection ? "Hide" : "Show"} Download Options
+          </button>
+        </div>
+
+        {showDownloadSection && (
+          <div style={{ 
+            padding: "1.5rem", 
+            backgroundColor: "#f9f9f9", 
+            borderRadius: "8px", 
+            border: "1px solid #ddd" 
+          }}>
+            <p style={{ 
+              margin: "0 0 1rem 0", 
+              fontSize: "0.9rem", 
+              color: "#666",
+              fontStyle: "italic" 
+            }}>
+              Download your journal entries as a CSV file for the selected date range
+            </p>
+
+            <div style={{ 
+              display: "grid", 
+              gridTemplateColumns: "1fr 1fr", 
+              gap: "1rem", 
+              marginBottom: "1rem" 
+            }}>
+              <div>
+                <label style={{ 
+                  display: "block", 
+                  marginBottom: "0.5rem", 
+                  fontWeight: "bold", 
+                  fontSize: "0.9rem" 
+                }}>
+                  From Date:
+                </label>
+                <input
+                  type="date"
+                  value={downloadFromDate}
+                  onChange={(e) => setDownloadFromDate(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    borderRadius: "4px",
+                    border: "1px solid #ccc",
+                    fontSize: "0.9rem"
+                  }}
+                />
+              </div>
+              
+              <div>
+                <label style={{ 
+                  display: "block", 
+                  marginBottom: "0.5rem", 
+                  fontWeight: "bold", 
+                  fontSize: "0.9rem" 
+                }}>
+                  To Date:
+                </label>
+                <input
+                  type="date"
+                  value={downloadToDate}
+                  onChange={(e) => setDownloadToDate(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    borderRadius: "4px",
+                    border: "1px solid #ccc",
+                    fontSize: "0.9rem"
+                  }}
+                />
+              </div>
+            </div>
+
+            {downloadError && (
+              <div style={{
+                backgroundColor: "#fee",
+                color: "#c33",
+                padding: "0.75rem",
+                borderRadius: "6px",
+                marginBottom: "1rem",
+                fontSize: "0.9rem",
+                border: "1px solid #fcc",
+              }}>
+                ⚠️ {downloadError}
+              </div>
+            )}
+
+            <div style={{ 
+              display: "flex", 
+              justifyContent: "space-between", 
+              alignItems: "center" 
+            }}>
+              <div style={{ fontSize: "0.8rem", color: "#666" }}>
+                User: <strong>{user}</strong> | 
+                Range: <strong>{downloadFromDate}</strong> to <strong>{downloadToDate}</strong>
+              </div>
+              
+              <button
+                onClick={downloadEntriesAsCSV}
+                disabled={isDownloading || !downloadFromDate || !downloadToDate}
+                style={{
+                  padding: "0.7rem 1.5rem",
+                  fontSize: "1rem",
+                  backgroundColor: isDownloading ? "#cccccc" : "#2196f3",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: isDownloading ? "not-allowed" : "pointer",
+                  fontWeight: "600",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem"
+                }}
+              >
+                {isDownloading ? (
+                  <>
+                    <span>⏳</span>
+                    Downloading...
+                  </>
+                ) : (
+                  <>
+                    <span>📥</span>
+                    Download CSV
+                  </>
+                )}
+              </button>
+            </div>
+
+            <div style={{ 
+              marginTop: "1rem", 
+              fontSize: "0.8rem", 
+              color: "#888",
+              fontStyle: "italic" 
+            }}>
+              💡 The CSV file will contain columns: Date, Time, Entry, User
+            </div>
+          </div>
+        )}
+      </div>
+
+      <hr style={{ margin: "2rem 0", borderColor: "#ccc" }} />
       <h2 style={{ textAlign: "center", marginBottom: "1rem" }}>
         📅 Journal Calendar
       </h2>
@@ -769,6 +1107,175 @@ export default function Journal({ user, onLogout }) {
           value={selectedDate}
           locale="en-US"
         />
+      </div>
+
+      {/* CSV Download Section - Moved here for better visibility */}
+      <div style={{ marginTop: "2rem", marginBottom: "2rem" }}>
+        <div style={{ 
+          display: "flex", 
+          justifyContent: "space-between", 
+          alignItems: "center", 
+          marginBottom: "1rem" 
+        }}>
+          <h3 style={{ margin: 0, color: "#333" }}>📥 Download Entries as CSV</h3>
+          <button
+            onClick={() => setShowDownloadSection(!showDownloadSection)}
+            style={{
+              padding: "0.5rem 1rem",
+              fontSize: "0.9rem",
+              cursor: "pointer",
+              borderRadius: "6px",
+              border: "1px solid #888",
+              backgroundColor: showDownloadSection ? "#e0e0e0" : "#2196f3",
+              color: showDownloadSection ? "#333" : "white",
+              fontWeight: "600"
+            }}
+          >
+            {showDownloadSection ? "Hide Options" : "Show Download Options"}
+          </button>
+        </div>
+
+        {showDownloadSection && (
+          <div style={{ 
+            padding: "1.5rem", 
+            backgroundColor: "#f0f8ff", 
+            borderRadius: "8px", 
+            border: "2px solid #2196f3" 
+          }}>
+            <p style={{ 
+              margin: "0 0 1rem 0", 
+              fontSize: "0.9rem", 
+              color: "#666",
+              fontStyle: "italic" 
+            }}>
+              📋 Download your journal entries as a CSV file for the selected date range
+            </p>
+
+            <div style={{ 
+              display: "grid", 
+              gridTemplateColumns: "1fr 1fr", 
+              gap: "1rem", 
+              marginBottom: "1rem" 
+            }}>
+              <div>
+                <label style={{ 
+                  display: "block", 
+                  marginBottom: "0.5rem", 
+                  fontWeight: "bold", 
+                  fontSize: "0.9rem" 
+                }}>
+                  📅 From Date:
+                </label>
+                <input
+                  type="date"
+                  value={downloadFromDate}
+                  onChange={(e) => setDownloadFromDate(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    borderRadius: "4px",
+                    border: "1px solid #ccc",
+                    fontSize: "0.9rem"
+                  }}
+                />
+              </div>
+              
+              <div>
+                <label style={{ 
+                  display: "block", 
+                  marginBottom: "0.5rem", 
+                  fontWeight: "bold", 
+                  fontSize: "0.9rem" 
+                }}>
+                  📅 To Date:
+                </label>
+                <input
+                  type="date"
+                  value={downloadToDate}
+                  onChange={(e) => setDownloadToDate(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem",
+                    borderRadius: "4px",
+                    border: "1px solid #ccc",
+                    fontSize: "0.9rem"
+                  }}
+                />
+              </div>
+            </div>
+
+            {downloadError && (
+              <div style={{
+                backgroundColor: "#fee",
+                color: "#c33",
+                padding: "0.75rem",
+                borderRadius: "6px",
+                marginBottom: "1rem",
+                fontSize: "0.9rem",
+                border: "1px solid #fcc",
+              }}>
+                ⚠️ {downloadError}
+              </div>
+            )}
+
+            <div style={{ 
+              display: "flex", 
+              justifyContent: "space-between", 
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "1rem"
+            }}>
+              <div style={{ fontSize: "0.8rem", color: "#666" }}>
+                👤 User: <strong>{user}</strong><br/>
+                📊 Range: <strong>{downloadFromDate}</strong> to <strong>{downloadToDate}</strong>
+              </div>
+              
+              <button
+                onClick={downloadEntriesAsCSV}
+                disabled={isDownloading || !downloadFromDate || !downloadToDate}
+                style={{
+                  padding: "0.8rem 2rem",
+                  fontSize: "1.1rem",
+                  backgroundColor: isDownloading ? "#cccccc" : "#2196f3",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: isDownloading ? "not-allowed" : "pointer",
+                  fontWeight: "700",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                  boxShadow: isDownloading ? "none" : "0 2px 4px rgba(33, 150, 243, 0.3)"
+                }}
+              >
+                {isDownloading ? (
+                  <>
+                    <span>⏳</span>
+                    Downloading...
+                  </>
+                ) : (
+                  <>
+                    <span>📥</span>
+                    Download CSV
+                  </>
+                )}
+              </button>
+            </div>
+
+            <div style={{ 
+              marginTop: "1rem", 
+              fontSize: "0.8rem", 
+              color: "#555",
+              backgroundColor: "#fff",
+              padding: "0.5rem",
+              borderRadius: "4px",
+              border: "1px solid #ddd"
+            }}>
+              💡 <strong>CSV Format:</strong> Date, Time, Entry, User | 
+              <strong>Filename:</strong> journal-entries-{user}-[daterange].csv
+            </div>
+          </div>
+        )}
       </div>
 
       <div
