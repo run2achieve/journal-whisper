@@ -9,10 +9,7 @@ const PROXY_API_URL =
     : "https://journal-whisper.onrender.com/transcribeAudio";
 
 const formatDateLocal = (date) => {
-  // Ensure we're working with a proper Date object
   const dateObj = date instanceof Date ? date : new Date(date);
-  
-  // Use local timezone instead of UTC to avoid date shifting
   const year = dateObj.getFullYear();
   const month = String(dateObj.getMonth() + 1).padStart(2, "0");
   const day = String(dateObj.getDate()).padStart(2, "0");
@@ -33,27 +30,18 @@ export default function Journal({ user, onLogout }) {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [entriesForDate, setEntriesForDate] = useState([]);
   const [localEntries, setLocalEntries] = useState({});
-  const [entriesCache, setEntriesCache] = useState({}); // Cache for fetched entries
-  const [cacheTimestamps, setCacheTimestamps] = useState({}); // Track when data was cached
+  const [entriesCache, setEntriesCache] = useState({});
+  const [cacheTimestamps, setCacheTimestamps] = useState({});
   const [saveAnimating, setSaveAnimating] = useState(false);
   const [saveClickAnimating, setSaveClickAnimating] = useState(false);
   const [isLoadingEntries, setIsLoadingEntries] = useState(false);
   const [isRefreshingEntries, setIsRefreshingEntries] = useState(false);
   const [fetchError, setFetchError] = useState(null);
-  
-  // New states for modal functionality
-  const [showModal, setShowModal] = useState(false);
-  const [modalEntries, setModalEntries] = useState([]);
-  const [modalDate, setModalDate] = useState("");
-  const [isLoadingModal, setIsLoadingModal] = useState(false);
-  const [isRefreshingModal, setIsRefreshingModal] = useState(false);
-  const [modalError, setModalError] = useState(null);
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const countdownIntervalRef = useRef(null);
 
-  // Cache expiry time (5 minutes)
   const CACHE_EXPIRY_MS = 5 * 60 * 1000;
 
   const generateTimestamp = () => {
@@ -72,10 +60,9 @@ export default function Journal({ user, onLogout }) {
     const timestamp = cacheTimestamps[dateKey];
     if (!timestamp) return false;
     
-    // If we have cached data but it's empty, expire the cache faster (1 minute instead of 5)
     const cachedData = entriesCache[dateKey];
     const isEmptyResult = Array.isArray(cachedData) && cachedData.length === 0;
-    const expiryTime = isEmptyResult ? 60 * 1000 : CACHE_EXPIRY_MS; // 1 minute for empty, 5 minutes for data
+    const expiryTime = isEmptyResult ? 60 * 1000 : CACHE_EXPIRY_MS;
     
     return Date.now() - timestamp < expiryTime;
   };
@@ -83,23 +70,17 @@ export default function Journal({ user, onLogout }) {
   const fetchEntriesForDate = async (dateToFetch, forceRefresh = false) => {
     const dateKey = formatDateLocal(dateToFetch);
     
-    // ENHANCED DEBUG LOGGING
     console.group(`🔍 FETCH DEBUG - Date: ${dateKey}`);
     console.log("1. Input date object:", dateToFetch);
     console.log("2. Formatted date key:", dateKey);
     console.log("3. Current user:", user);
     console.log("4. Force refresh:", forceRefresh);
-    console.log("5. Current cache:", entriesCache);
-    console.log("6. Cache timestamps:", cacheTimestamps);
     
-    // Show cached data immediately if available and valid (unless force refresh)
     const hasCachedData = entriesCache[dateKey];
     const cacheIsValid = isCacheValid(dateKey);
     
-    console.log("7. Has cached data:", hasCachedData);
-    console.log("8. Cache is valid:", cacheIsValid);
-    console.log("9. Cache data content:", hasCachedData);
-    console.log("10. Is empty result?", Array.isArray(hasCachedData) && hasCachedData.length === 0);
+    console.log("5. Has cached data:", hasCachedData);
+    console.log("6. Cache is valid:", cacheIsValid);
     
     if (!forceRefresh && hasCachedData && cacheIsValid) {
       console.log("✅ Using valid cache data");
@@ -109,7 +90,6 @@ export default function Journal({ user, onLogout }) {
       return;
     }
 
-    // If we have cached data but it's stale, show it while loading fresh data
     if (hasCachedData && !forceRefresh) {
       console.log("⚠️ Using stale cache while refreshing");
       setEntriesForDate(entriesCache[dateKey]);
@@ -126,8 +106,6 @@ export default function Journal({ user, onLogout }) {
         ? "http://localhost:8090/getEntries"
         : "https://journal-whisper.onrender.com/getEntries";
 
-    console.log("9. API URL:", FETCH_API_URL);
-
     try {
       const requestBody = {
         user: user,
@@ -135,15 +113,8 @@ export default function Journal({ user, onLogout }) {
         timestamp: Date.now()
       };
       
-      console.log("10. Request body:", JSON.stringify(requestBody, null, 2));
-      console.log("11. Request headers:", {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-        "Pragma": "no-cache",
-        "Expires": "0"
-      });
-      
-      console.log("12. 🚀 Sending fetch request...");
+      console.log("7. Request body:", JSON.stringify(requestBody, null, 2));
+      console.log("8. 🚀 Sending fetch request...");
       
       const response = await fetch(FETCH_API_URL, {
         method: "POST",
@@ -156,66 +127,41 @@ export default function Journal({ user, onLogout }) {
         body: JSON.stringify(requestBody),
       });
       
-      console.log("13. Response received:");
-      console.log("    - Status:", response.status);
-      console.log("    - Status text:", response.statusText);
-      console.log("    - Headers:", Object.fromEntries(response.headers.entries()));
+      console.log("9. Response status:", response.status);
       
       if (!response.ok) {
         throw new Error(`Failed to fetch entries: ${response.status} ${response.statusText}`);
       }
       
-      // Get response as text first to see raw data
       const responseText = await response.text();
-      console.log("14. Raw response text:", responseText);
+      console.log("10. Raw response text:", responseText);
       
-      // Try to parse as JSON
       let data;
       try {
         data = JSON.parse(responseText);
-        console.log("15. Parsed JSON data:", data);
+        console.log("11. Parsed JSON data:", data);
       } catch (parseError) {
         console.error("❌ JSON parse error:", parseError);
-        console.log("Response was not valid JSON:", responseText);
         throw new Error("Invalid JSON response from server");
       }
       
-      // Check data structure
-      console.log("16. Data structure analysis:");
-      console.log("    - Type of data:", typeof data);
-      console.log("    - Data keys:", Object.keys(data || {}));
-      console.log("    - data.entries type:", typeof data.entries);
-      console.log("    - data.entries length:", data.entries ? data.entries.length : "N/A");
-      console.log("    - data.entries content:", data.entries);
-      
-      // Sort entries by time in descending order (most recent first)
       const sortedEntries = (data.entries || []).sort((a, b) => {
-        console.log("17. Sorting entry:", a, "vs", b);
         const timeA = new Date(`1970-01-01 ${a.time}`);
         const timeB = new Date(`1970-01-01 ${b.time}`);
         return timeB - timeA;
       });
       
-      console.log("18. Final sorted entries:", sortedEntries);
+      console.log("12. Final sorted entries:", sortedEntries);
       
-      // Update cache with timestamp
-      setEntriesCache(prev => {
-        const newCache = {
-          ...prev,
-          [dateKey]: sortedEntries
-        };
-        console.log("19. Updated cache:", newCache);
-        return newCache;
-      });
+      setEntriesCache(prev => ({
+        ...prev,
+        [dateKey]: sortedEntries
+      }));
       
-      setCacheTimestamps(prev => {
-        const newTimestamps = {
-          ...prev,
-          [dateKey]: Date.now()
-        };
-        console.log("20. Updated cache timestamps:", newTimestamps);
-        return newTimestamps;
-      });
+      setCacheTimestamps(prev => ({
+        ...prev,
+        [dateKey]: Date.now()
+      }));
       
       setEntriesForDate(sortedEntries);
       setFetchError(null);
@@ -224,15 +170,9 @@ export default function Journal({ user, onLogout }) {
       
     } catch (err) {
       console.error("❌ ERROR in fetchEntriesForDate:", err);
-      console.log("Error details:");
-      console.log("  - Message:", err.message);
-      console.log("  - Stack:", err.stack);
       
-      // If we have cached data, keep showing it with error message
       if (!hasCachedData) {
-        console.log("No cached data available, setting empty array");
         setEntriesForDate([]);
-        // Cache empty result to avoid repeated failed requests
         setEntriesCache(prev => ({
           ...prev,
           [dateKey]: []
@@ -241,166 +181,27 @@ export default function Journal({ user, onLogout }) {
           ...prev,
           [dateKey]: Date.now()
         }));
-      } else {
-        console.log("Keeping cached data due to error");
       }
       
       setFetchError(err.message);
       
     } finally {
-      console.log("21. 🏁 Fetch operation complete");
+      console.log("13. 🏁 Fetch operation complete");
       console.groupEnd();
       setIsLoadingEntries(false);
       setIsRefreshingEntries(false);
     }
   };
 
-  // Enhanced function to handle date clicks and show modal
-  const handleDateClick = async (clickedDate) => {
-    const dateKey = formatDateLocal(clickedDate);
-    
-    console.group(`🎯 DATE CLICK DEBUG - Date: ${dateKey}`);
-    console.log("1. Clicked date object:", clickedDate);
-    console.log("2. Formatted date key:", dateKey);
-    console.log("3. Current user:", user);
-    
-    setModalDate(dateKey);
-    setShowModal(true);
-    setModalError(null);
-
-    // Check cache first and show if valid
-    const hasCachedData = entriesCache[dateKey];
-    const cacheIsValid = isCacheValid(dateKey);
-    
-    console.log("4. Has cached data:", hasCachedData);
-    console.log("5. Cache is valid:", cacheIsValid);
-    
-    if (hasCachedData && cacheIsValid) {
-      console.log("✅ Using valid cache for modal");
-      console.groupEnd();
-      setModalEntries(entriesCache[dateKey]);
-      setIsLoadingModal(false);
-      return;
-    }
-
-    // If we have cached data but it's stale, show it while loading fresh data
-    if (hasCachedData) {
-      console.log("⚠️ Using stale cache for modal while refreshing");
-      setModalEntries(entriesCache[dateKey]);
-      setIsRefreshingModal(true);
-    } else {
-      console.log("🔄 Loading fresh data for modal");
-      setIsLoadingModal(true);
-    }
-
-    const FETCH_API_URL =
-      window.location.hostname === "localhost"
-        ? "http://localhost:8090/getEntries"
-        : "https://journal-whisper.onrender.com/getEntries";
-
-    console.log("6. Modal API URL:", FETCH_API_URL);
-
-    try {
-      const requestBody = {
-        user: user,
-        date: dateKey,
-        timestamp: Date.now()
-      };
-      
-      console.log("7. Modal request body:", JSON.stringify(requestBody, null, 2));
-      console.log("8. 🚀 Sending modal fetch request...");
-      
-      const response = await fetch(FETCH_API_URL, {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Cache-Control": "no-cache, no-store, must-revalidate",
-          "Pragma": "no-cache",
-          "Expires": "0"
-        },
-        body: JSON.stringify(requestBody),
-      });
-      
-      console.log("9. Modal response:");
-      console.log("    - Status:", response.status);
-      console.log("    - Status text:", response.statusText);
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch entries: ${response.status} ${response.statusText}`);
-      }
-      
-      const responseText = await response.text();
-      console.log("10. Modal raw response:", responseText);
-      
-      const data = JSON.parse(responseText);
-      console.log("11. Modal parsed data:", data);
-      
-      // Sort entries by time in descending order (most recent first)
-      const sortedEntries = (data.entries || []).sort((a, b) => {
-        const timeA = new Date(`1970-01-01 ${a.time}`);
-        const timeB = new Date(`1970-01-01 ${b.time}`);
-        return timeB - timeA;
-      });
-      
-      console.log("12. Modal sorted entries:", sortedEntries);
-      
-      // Update cache with timestamp
-      setEntriesCache(prev => ({
-        ...prev,
-        [dateKey]: sortedEntries
-      }));
-      setCacheTimestamps(prev => ({
-        ...prev,
-        [dateKey]: Date.now()
-      }));
-      
-      setModalEntries(sortedEntries);
-      setModalError(null);
-      
-      console.log("✅ SUCCESS: Modal entries loaded");
-      
-    } catch (err) {
-      console.error("❌ ERROR in modal fetch:", err);
-      
-      if (!hasCachedData) {
-        setModalEntries([]);
-        setEntriesCache(prev => ({
-          ...prev,
-          [dateKey]: []
-        }));
-        setCacheTimestamps(prev => ({
-          ...prev,
-          [dateKey]: Date.now()
-        }));
-      }
-      
-      setModalError(err.message);
-      
-    } finally {
-      console.log("13. 🏁 Modal fetch complete");
-      console.groupEnd();
-      setIsLoadingModal(false);
-      setIsRefreshingModal(false);
-    }
-  };
-
-  const closeModal = () => {
-    setShowModal(false);
-    setModalEntries([]);
-    setModalDate("");
-    setModalError(null);
-  };
-
   const handleRefreshEntries = () => {
     fetchEntriesForDate(selectedDate, true);
   };
 
-  // Debug Section Component
   const DebugSection = () => {
     const testAPICall = async () => {
       console.group("🧪 MANUAL API TEST");
       
-      const testDate = "2025-06-03"; // Change this to a date you know has entries
+      const testDate = "2025-06-03";
       const FETCH_API_URL =
         window.location.hostname === "localhost"
           ? "http://localhost:8090/getEntries"
@@ -618,7 +419,7 @@ export default function Journal({ user, onLogout }) {
         : "https://journal-whisper.onrender.com/saveEntry";
 
     try {
-      console.log("Saving to Google Sheet:", { date, time, entry: text, user: username }); // Debug log
+      console.log("Saving to Google Sheet:", { date, time, entry: text, user: username });
       
       const response = await fetch(SAVE_API_URL, {
         method: "POST",
@@ -629,10 +430,10 @@ export default function Journal({ user, onLogout }) {
         throw new Error("Failed to save entry to Google Sheets");
       
       const result = await response.json();
-      console.log("Save result:", result); // Debug log
+      console.log("Save result:", result);
       return result;
     } catch (error) {
-      console.error("Save error:", error); // Debug log
+      console.error("Save error:", error);
       setSaveMessage("Error saving to Google Sheets: " + error.message);
       setShowToast(true);
       return null;
@@ -647,15 +448,13 @@ export default function Journal({ user, onLogout }) {
       return;
     }
 
-    // Animate click: scale down quickly then back up
     setSaveClickAnimating(true);
     setTimeout(() => setSaveClickAnimating(false), 150);
 
-    // Ensure we're using the same date format when saving
-    const saveDate = formatDateLocal(new Date()); // Use current date
+    const saveDate = formatDateLocal(new Date());
     const saveTime = new Date().toLocaleTimeString();
     
-    console.log("Saving entry with date:", saveDate, "time:", saveTime, "user:", user); // Debug log
+    console.log("Saving entry with date:", saveDate, "time:", saveTime, "user:", user);
 
     const result = await saveToGoogleSheet(
       saveDate,
@@ -670,29 +469,24 @@ export default function Journal({ user, onLogout }) {
       setSaveMessage("Journal entry saved successfully!");
       setShowToast(true);
 
-      // Add the new entry to the current entries list at the top (most recent first)
       const newEntry = {
         time: saveTime,
         entry: entry,
       };
       
-      // Update cache timestamp since we're adding new data
       setCacheTimestamps(prev => ({
         ...prev,
         [saveDate]: Date.now()
       }));
       
-      // Only update entries if we're viewing the same date as we're saving to
       const selectedDateKey = formatDateLocal(selectedDate);
       if (saveDate === selectedDateKey) {
-        // Update both the displayed entries and the cache
         setEntriesForDate(prevEntries => [newEntry, ...prevEntries]);
         setEntriesCache(prev => ({
           ...prev,
           [saveDate]: [newEntry, ...(prev[saveDate] || [])]
         }));
       } else {
-        // If saving to a different date, just update the cache and switch to that date
         setEntriesCache(prev => ({
           ...prev,
           [saveDate]: [newEntry, ...(prev[saveDate] || [])]
@@ -778,173 +572,6 @@ export default function Journal({ user, onLogout }) {
         </div>
       )}
 
-      {/* Modal for showing entries when date is clicked */}
-      {showModal && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.7)",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            zIndex: 10000,
-            padding: "2rem",
-          }}
-          onClick={closeModal}
-        >
-          <div
-            style={{
-              backgroundColor: "#FFF8E7",
-              borderRadius: "12px",
-              padding: "2rem",
-              maxWidth: "600px",
-              maxHeight: "80vh",
-              overflowY: "auto",
-              boxShadow: "0 10px 30px rgba(0, 0, 0, 0.3)",
-              position: "relative",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Close button */}
-            <button
-              onClick={closeModal}
-              style={{
-                position: "absolute",
-                top: "1rem",
-                right: "1rem",
-                background: "none",
-                border: "none",
-                fontSize: "1.5rem",
-                cursor: "pointer",
-                color: "#666",
-                padding: "0.5rem",
-                borderRadius: "50%",
-                width: "40px",
-                height: "40px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-              title="Close"
-            >
-              ×
-            </button>
-
-            <h2 style={{ marginTop: 0, marginBottom: "1.5rem", color: "#333" }}>
-              📅 Entries for {modalDate}
-              {isRefreshingModal && (
-                <span style={{ fontSize: "0.8rem", color: "#666", marginLeft: "1rem" }}>
-                  🔄 Refreshing...
-                </span>
-              )}
-            </h2>
-
-            {modalError && (
-              <div
-                style={{
-                  backgroundColor: "#fee",
-                  color: "#c33",
-                  padding: "0.75rem",
-                  borderRadius: "6px",
-                  marginBottom: "1rem",
-                  fontSize: "0.9rem",
-                  border: "1px solid #fcc",
-                }}
-              >
-                ⚠️ Error loading entries: {modalError}
-                {modalEntries.length > 0 && (
-                  <div style={{ marginTop: "0.5rem", fontSize: "0.8rem" }}>
-                    Showing cached data below.
-                  </div>
-                )}
-              </div>
-            )}
-
-            {isLoadingModal ? (
-              <div
-                style={{
-                  textAlign: "center",
-                  color: "#666",
-                  fontStyle: "italic",
-                  padding: "2rem",
-                }}
-              >
-                Loading entries...
-              </div>
-            ) : modalEntries.length > 0 ? (
-              <>
-                <div
-                  style={{
-                    fontSize: "0.9rem",
-                    color: "#666",
-                    marginBottom: "1rem",
-                    fontStyle: "italic",
-                  }}
-                >
-                  {modalEntries.length} {modalEntries.length === 1 ? "entry" : "entries"} found
-                  {!isCacheValid(modalDate) && modalEntries.length > 0 && (
-                    <span style={{ color: "#f39c12", marginLeft: "0.5rem" }}>
-                      (cached data)
-                    </span>
-                  )}
-                </div>
-                <div style={{ maxHeight: "400px", overflowY: "auto" }}>
-                  {modalEntries.map(({ time, entry }, index) => (
-                    <div
-                      key={`${time}-${index}`}
-                      style={{
-                        marginBottom: "1.5rem",
-                        padding: "1rem",
-                        backgroundColor: "#f9f9f9",
-                        borderRadius: "8px",
-                        border: "1px solid #ddd",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontWeight: "bold",
-                          fontSize: "0.9rem",
-                          marginBottom: "0.5rem",
-                          color: "#555",
-                          borderBottom: "1px solid #eee",
-                          paddingBottom: "0.25rem",
-                        }}
-                      >
-                        🕒 {time}
-                      </div>
-                      <div
-                        style={{
-                          whiteSpace: "pre-wrap",
-                          paddingTop: "0.5rem",
-                          lineHeight: "1.5",
-                        }}
-                      >
-                        {entry}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <div
-                style={{
-                  textAlign: "center",
-                  color: "#666",
-                  fontStyle: "italic",
-                  padding: "2rem",
-                }}
-              >
-                No entries found for this date.
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       <div
         style={{
           display: "flex",
@@ -978,7 +605,6 @@ export default function Journal({ user, onLogout }) {
         </div>
       </div>
 
-      {/* Recording buttons */}
       <div
         style={{
           display: "flex",
@@ -1044,7 +670,6 @@ export default function Journal({ user, onLogout }) {
         })}
       </div>
 
-      {/* Timestamp */}
       <div
         style={{
           textAlign: "center",
@@ -1130,7 +755,7 @@ export default function Journal({ user, onLogout }) {
         color: "#666",
         fontStyle: "italic" 
       }}>
-        💡 Click on any date to view all entries for that day
+        💡 Click on any date to view entries below
       </div>
 
       <div style={{ display: "flex", justifyContent: "center" }}>
@@ -1141,13 +766,11 @@ export default function Journal({ user, onLogout }) {
             setShowToast(false);
             setSaveMessage("");
           }}
-          onClickDay={handleDateClick}
           value={selectedDate}
           locale="en-US"
         />
       </div>
 
-      {/* Entries section with enhanced error handling and refresh */}
       <div
         style={{
           marginTop: "1rem",
@@ -1277,7 +900,6 @@ export default function Journal({ user, onLogout }) {
         )}
       </div>
 
-      {/* Debug Section */}
       <DebugSection />
     </div>
   );
