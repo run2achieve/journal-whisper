@@ -611,7 +611,7 @@ export default function Login({ onLogin }) {
         </div>
         <div>
           Hard-coded users: {Object.keys(USERS).length}<br/>
-          Local registered users: {Object.keys(dynamicUsers).length}<br/>
+          Registered users: {Object.keys(dynamicUsers).length}<br/>
           Backend status: {getBackendStatusIndicator()}<br/>
           {Object.keys(dynamicUsers).length > 0 && (
             <div>Last registered: {Object.keys(dynamicUsers)[Object.keys(dynamicUsers).length - 1]}</div>
