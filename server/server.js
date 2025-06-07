@@ -2,12 +2,13 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const multer = require("multer");
+const nodemailer = require("nodemailer"); // NEW: Added for email functionality
 const fetch = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
 const FormData = require("form-data");
 
 // Load environment variables only in development
 if (process.env.NODE_ENV !== "production") {
-  require("dotenv").config();
+  require("dotenv").config({ path: './apikey.env' }); // Updated to use your existing env file
 }
 
 const app = express();
@@ -29,6 +30,13 @@ if (!OPENAI_API_KEY) {
   process.exit(1);
 }
 
+// NEW: Email configuration validation
+if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
+  console.log("📧 Email system configured with Gmail:", process.env.GMAIL_USER);
+} else {
+  console.log("⚠️ Email system not configured. Add GMAIL_USER and GMAIL_APP_PASSWORD to apikey.env");
+}
+
 // Configure CORS options
 const corsOptions = {
   origin:
@@ -43,6 +51,160 @@ app.use(express.json());
 
 // Serve React build files
 app.use(express.static(path.join(__dirname, "../build")));
+
+// ========================================
+// NEW: EMAIL SYSTEM FUNCTIONS
+// ========================================
+
+// Gmail transporter setup
+const createGmailTransporter = () => {
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_APP_PASSWORD
+    }
+  });
+};
+
+// Email templates
+const getUsernameEmailHTML = (username) => `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
+    .container { max-width: 600px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    .header { text-align: center; margin-bottom: 30px; }
+    .title { color: #4CAF50; margin: 0; }
+    .credential-box { background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #4CAF50; }
+    .credential-label { font-weight: bold; color: #333; margin-bottom: 10px; }
+    .credential-value { font-family: 'Courier New', monospace; font-size: 18px; color: #2c3e50; background-color: white; padding: 10px; border-radius: 4px; border: 1px solid #ddd; }
+    .warning { background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0; }
+    .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #666; font-size: 12px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1 class="title">🔐 Welcome to Journal App!</h1>
+    </div>
+    
+    <p>Your account has been created successfully. Here is your login username:</p>
+    
+    <div class="credential-box">
+      <div class="credential-label">Your Username:</div>
+      <div class="credential-value">${username}</div>
+    </div>
+    
+    <div class="warning">
+      <strong>⚠️ Important Security Notice:</strong><br>
+      Your password will be sent in a separate email within the next minute for security reasons. Please check your inbox shortly.
+    </div>
+    
+    <p>Keep this information safe and secure. You'll need both your username and password to access your journal.</p>
+    
+    <div class="footer">
+      This is an automated message from Journal App. Please do not reply to this email.
+    </div>
+  </div>
+</body>
+</html>
+`;
+
+const getPasswordEmailHTML = (password) => `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
+    .container { max-width: 600px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    .header { text-align: center; margin-bottom: 30px; }
+    .title { color: #2196F3; margin: 0; }
+    .credential-box { background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #2196F3; }
+    .credential-label { font-weight: bold; color: #333; margin-bottom: 10px; }
+    .credential-value { font-family: 'Courier New', monospace; font-size: 18px; color: #2c3e50; background-color: white; padding: 10px; border-radius: 4px; border: 1px solid #ddd; }
+    .security-note { background-color: #e3f2fd; border: 1px solid #bbdefb; padding: 15px; border-radius: 5px; margin: 20px 0; }
+    .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #666; font-size: 12px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1 class="title">🔑 Your Journal App Password</h1>
+    </div>
+    
+    <p>Here is your password for accessing the Journal App:</p>
+    
+    <div class="credential-box">
+      <div class="credential-label">Your Password:</div>
+      <div class="credential-value">${password}</div>
+    </div>
+    
+    <div class="security-note">
+      <strong>🔒 Security Information:</strong><br>
+      • This password was sent separately from your username for security<br>
+      • Store this information securely<br>
+      • Never share your credentials with anyone<br>
+      • Consider saving this in a password manager
+    </div>
+    
+    <p>You now have both your username and password. You can login to your journal at any time.</p>
+    
+    <div class="footer">
+      This is an automated message from Journal App. Please do not reply to this email.
+    </div>
+  </div>
+</body>
+</html>
+`;
+
+// Email sending functions
+const sendUsernameEmail = async (email, username) => {
+  const transporter = createGmailTransporter();
+  
+  const mailOptions = {
+    from: {
+      name: 'Journal App',
+      address: process.env.GMAIL_USER
+    },
+    to: email,
+    subject: '🔐 Your Journal App Username',
+    html: getUsernameEmailHTML(username)
+  };
+
+  try {
+    const result = await transporter.sendMail(mailOptions);
+    console.log('✅ Username email sent successfully to:', email);
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error('❌ Failed to send username email:', error);
+    throw error;
+  }
+};
+
+const sendPasswordEmail = async (email, password) => {
+  const transporter = createGmailTransporter();
+  
+  const mailOptions = {
+    from: {
+      name: 'Journal App',
+      address: process.env.GMAIL_USER
+    },
+    to: email,
+    subject: '🔑 Your Journal App Password',
+    html: getPasswordEmailHTML(password)
+  };
+
+  try {
+    const result = await transporter.sendMail(mailOptions);
+    console.log('✅ Password email sent successfully to:', email);
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error('❌ Failed to send password email:', error);
+    throw error;
+  }
+};
 
 // Health check endpoint
 app.get("/health", (req, res) => {
@@ -308,16 +470,16 @@ ${entriesText}`;
 });
 
 // ========================================
-// NEW: USER REGISTRATION ENDPOINTS
+// USER REGISTRATION ENDPOINTS
 // These endpoints work with the USERS DATABASE SHEET (separate from journal entries)
 // ========================================
 
-// NEW: Registration endpoint - saves to Google Sheets USERS DATABASE
+// Registration endpoint - saves to Google Sheets USERS DATABASE
 app.post("/register", async (req, res) => {
   try {
     console.log("📝 User registration request received:", req.body.username);
     
-    const { username, password, email, fullName, registrationDate } = req.body;
+    const { username, password, email, registrationDate } = req.body;
     
     // Validate required fields
     if (!username || !password || !email) {
@@ -338,7 +500,6 @@ app.post("/register", async (req, res) => {
       username,
       password, // This is the generated passcode
       email,
-      fullName: fullName || email,
       registrationDate: registrationDate || new Date().toISOString()
     };
 
@@ -393,7 +554,7 @@ app.post("/register", async (req, res) => {
   }
 });
 
-// NEW: User login check endpoint - checks Google Sheets USERS DATABASE
+// User login check endpoint - checks Google Sheets USERS DATABASE
 app.post("/checkUser", async (req, res) => {
   try {
     console.log("🔍 Checking user credentials for:", req.body.username);
@@ -473,6 +634,168 @@ app.post("/checkUser", async (req, res) => {
   }
 });
 
+// ========================================
+// NEW: EMAIL ENDPOINTS
+// ========================================
+
+// API endpoint to send credentials
+app.post('/send-credentials', async (req, res) => {
+  const { email, username, password } = req.body;
+  
+  // Check if email system is configured
+  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+    return res.status(500).json({ 
+      success: false, 
+      error: 'Email system not configured. Please add GMAIL_USER and GMAIL_APP_PASSWORD to apikey.env' 
+    });
+  }
+  
+  // Validation
+  if (!email || !username || !password) {
+    return res.status(400).json({ 
+      success: false, 
+      error: 'Email, username, and password are required' 
+    });
+  }
+
+  try {
+    console.log(`📧 Sending credentials to: ${email}`);
+    
+    // Send username email first
+    const usernameResult = await sendUsernameEmail(email, username);
+    
+    // Schedule password email to be sent after 30 seconds
+    setTimeout(async () => {
+      try {
+        await sendPasswordEmail(email, password);
+      } catch (error) {
+        console.error('❌ Failed to send delayed password email:', error);
+      }
+    }, 30000); // 30 seconds delay
+    
+    res.json({ 
+      success: true, 
+      message: 'Username email sent successfully. Password email will be sent in 30 seconds.',
+      usernameMessageId: usernameResult.messageId
+    });
+    
+  } catch (error) {
+    console.error('❌ Failed to send emails:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to send username email: ' + error.message 
+    });
+  }
+});
+
+// API endpoint to send bulk credentials to all registered users
+app.post('/send-bulk-credentials', async (req, res) => {
+  const { users } = req.body; // Array of {email, username, password} objects
+  
+  // Check if email system is configured
+  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+    return res.status(500).json({ 
+      success: false, 
+      error: 'Email system not configured. Please add GMAIL_USER and GMAIL_APP_PASSWORD to apikey.env' 
+    });
+  }
+  
+  if (!users || !Array.isArray(users)) {
+    return res.status(400).json({ 
+      success: false, 
+      error: 'Users array is required' 
+    });
+  }
+
+  const results = [];
+  
+  try {
+    for (let i = 0; i < users.length; i++) {
+      const { email, username, password } = users[i];
+      
+      try {
+        console.log(`📧 Sending credentials ${i + 1}/${users.length} to: ${email}`);
+        
+        // Send username email
+        await sendUsernameEmail(email, username);
+        
+        // Schedule password email
+        setTimeout(async () => {
+          try {
+            await sendPasswordEmail(email, password);
+          } catch (error) {
+            console.error(`❌ Failed to send password email to ${email}:`, error);
+          }
+        }, 30000 + (i * 5000)); // Stagger password emails
+        
+        results.push({
+          email,
+          username,
+          success: true
+        });
+        
+        // Wait 10 seconds between users to avoid rate limiting
+        if (i < users.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 10000));
+        }
+        
+      } catch (error) {
+        console.error(`❌ Failed to send email to ${email}:`, error);
+        results.push({
+          email,
+          username,
+          success: false,
+          error: error.message
+        });
+      }
+    }
+    
+    res.json({
+      success: true,
+      message: `Processed ${users.length} users`,
+      results
+    });
+    
+  } catch (error) {
+    console.error('❌ Bulk email sending failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Bulk email sending failed: ' + error.message,
+      results
+    });
+  }
+});
+
+// Test endpoint to verify email configuration
+app.post('/test-email', async (req, res) => {
+  // Check if email system is configured
+  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+    return res.status(500).json({ 
+      success: false, 
+      error: 'Email system not configured. Please add GMAIL_USER and GMAIL_APP_PASSWORD to apikey.env' 
+    });
+  }
+  
+  try {
+    const transporter = createGmailTransporter();
+    
+    // Verify connection
+    await transporter.verify();
+    
+    res.json({ 
+      success: true, 
+      message: 'Email configuration is working!' 
+    });
+    
+  } catch (error) {
+    console.error('❌ Email configuration test failed:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Email configuration failed: ' + error.message 
+    });
+  }
+});
+
 // Catch-all handler to serve React app for all other routes (supports React Router)
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "../build/index.html"));
@@ -483,6 +806,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Server is running at http://localhost:${PORT} (env: ${process.env.NODE_ENV})`);
   console.log(`📊 Journal entries: Using existing Google Sheet`);
   console.log(`👥 User registration: Using ${USERS_GOOGLE_SCRIPT_URL === "YOUR_NEW_GOOGLE_APPS_SCRIPT_URL_FOR_USERS_SHEET" ? "NOT CONFIGURED" : "configured"} Users Google Sheet`);
+  console.log(`📧 Email system: ${process.env.GMAIL_USER ? `Configured with ${process.env.GMAIL_USER}` : "NOT CONFIGURED"}`);
 }).on("error", (err) => {
   console.error("Failed to start server:", err);
 });

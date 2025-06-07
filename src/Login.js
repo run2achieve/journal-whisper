@@ -71,6 +71,118 @@ export default function Login({ onLogin }) {
     console.log("💾 Saved users to localStorage:", users);
   };
 
+  // ========================================
+  // EMAIL SYSTEM FUNCTIONS
+  // ========================================
+
+  // Email service function
+  const sendCredentialEmails = async (email, username, password) => {
+    try {
+      const SEND_EMAIL_URL = window.location.hostname === "localhost"
+        ? "http://localhost:8090/send-credentials"
+        : "https://journal-whisper.onrender.com/send-credentials";
+
+      const response = await fetch(SEND_EMAIL_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email,
+          username: username,
+          password: password
+        }),
+      });
+
+      const result = await response.json();
+      
+      if (response.ok && result.success) {
+        console.log("✅ Credential emails scheduled successfully");
+        return { success: true, message: result.message };
+      } else {
+        console.error("❌ Failed to send emails:", result.error);
+        return { success: false, error: result.error };
+      }
+      
+    } catch (error) {
+      console.error("❌ Email service error:", error);
+      return { success: false, error: error.message };
+    }
+  };
+
+  // Function to send emails to all registered users
+  const sendBulkCredentials = async () => {
+    try {
+      // Get users from localStorage
+      const stored = localStorage.getItem('registeredUsers');
+      const users = stored ? JSON.parse(stored) : {};
+      
+      // Format users for API
+      const userArray = Object.entries(users).map(([username, userData]) => ({
+        email: userData.email,
+        username: username,
+        password: userData.passcode
+      }));
+
+      if (userArray.length === 0) {
+        alert("No registered users found to send emails to.");
+        return;
+      }
+
+      const BULK_EMAIL_URL = window.location.hostname === "localhost"
+        ? "http://localhost:8090/send-bulk-credentials"
+        : "https://journal-whisper.onrender.com/send-bulk-credentials";
+
+      console.log(`📧 Sending bulk emails to ${userArray.length} users...`);
+
+      const response = await fetch(BULK_EMAIL_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ users: userArray }),
+      });
+
+      const result = await response.json();
+      
+      if (response.ok && result.success) {
+        console.log("✅ Bulk emails sent successfully:", result);
+        alert(`✅ Bulk emails sent to ${userArray.length} users! Each user will receive their username immediately and password in 30 seconds.`);
+      } else {
+        console.error("❌ Bulk email failed:", result);
+        alert("❌ Bulk email failed: " + result.error);
+      }
+      
+    } catch (error) {
+      console.error("❌ Bulk email error:", error);
+      alert("❌ Bulk email error: " + error.message);
+    }
+  };
+
+  // Test email configuration
+  const testEmailConfiguration = async () => {
+    try {
+      const TEST_EMAIL_URL = window.location.hostname === "localhost"
+        ? "http://localhost:8090/test-email"
+        : "https://journal-whisper.onrender.com/test-email";
+
+      const response = await fetch(TEST_EMAIL_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const result = await response.json();
+      
+      if (response.ok && result.success) {
+        console.log("✅ Email configuration test passed");
+        alert("✅ Email configuration is working!");
+      } else {
+        console.error("❌ Email configuration test failed:", result.error);
+        alert("❌ Email configuration failed: " + result.error);
+      }
+      
+    } catch (error) {
+      console.error("❌ Email test error:", error);
+      alert("❌ Email test error: " + error.message);
+    }
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     
@@ -135,6 +247,7 @@ export default function Login({ onLogin }) {
     setError("Invalid username or password");
   };
 
+  // UPDATED: Registration function with email system integration
   const handleRegister = async (e) => {
     e.preventDefault();
     setError("");
@@ -146,14 +259,12 @@ export default function Login({ onLogin }) {
       return;
     }
 
-    // Basic email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       setError("Please enter a valid email address");
       return;
     }
 
-    // Check if email already exists in localStorage users
     const existingUser = Object.keys(dynamicUsers).find(user => 
       dynamicUsers[user].email === email
     );
@@ -165,7 +276,6 @@ export default function Login({ onLogin }) {
     setIsRegistering(true);
 
     try {
-      // Generate random username and passcode
       const timestamp = Date.now().toString().slice(-4);
       const randomPrefix = Math.random().toString(36).substring(2, 6);
       const newUsername = `user_${randomPrefix}${timestamp}`;
@@ -173,15 +283,14 @@ export default function Login({ onLogin }) {
 
       console.log("🎯 Generated credentials:", { username: newUsername, passcode: newPasscode });
 
-      // Try to save to Google Sheets backend first (primary storage)
       let backendSuccess = false;
       let backendError = null;
       
+      // Try to save to Google Sheets backend first
       try {
-        const REGISTER_API_URL =
-          window.location.hostname === "localhost"
-            ? "http://localhost:8090/register"
-            : "https://journal-whisper.onrender.com/register";
+        const REGISTER_API_URL = window.location.hostname === "localhost"
+          ? "http://localhost:8090/register"
+          : "https://journal-whisper.onrender.com/register";
 
         console.log("📤 Sending registration to Google Sheets...");
 
@@ -192,7 +301,7 @@ export default function Login({ onLogin }) {
             username: newUsername,
             password: newPasscode,
             email: email,
-            fullName: email,
+            // REMOVED: fullName: email, (no longer needed)
             registrationDate: new Date().toISOString(),
           }),
         });
@@ -208,7 +317,6 @@ export default function Login({ onLogin }) {
             backendError = result.error;
             setGoogleSheetsStatus("working");
             
-            // Check for duplicate errors from backend
             if (result.error.includes("already exists") || result.error.includes("already registered")) {
               setError(result.error);
               return;
@@ -220,13 +328,13 @@ export default function Login({ onLogin }) {
           backendError = errorData.error || `Server error: ${response.status}`;
           setGoogleSheetsStatus("failed");
         }
-      } catch (backendError) {
-        console.log("⚠️ Backend not available for registration:", backendError.message);
+      } catch (backendErrorCatch) {
+        console.log("⚠️ Backend not available for registration:", backendErrorCatch.message);
         setGoogleSheetsStatus("failed");
         backendError = "Backend service unavailable";
       }
 
-      // Always save to localStorage as backup (even if backend succeeded)
+      // Always save to localStorage as backup
       const updatedUsers = {
         ...dynamicUsers,
         [newUsername]: {
@@ -238,21 +346,37 @@ export default function Login({ onLogin }) {
       
       saveRegisteredUsers(updatedUsers);
 
-      // Update state for display
-      setGeneratedPasscode(newPasscode);
-      setUsername(newUsername);
-      setShowPasscode(true);
+      // 🆕 NEW: Try to send credential emails
+      console.log("📧 Attempting to send credential emails...");
+      const emailResult = await sendCredentialEmails(email, newUsername, newPasscode);
       
-      // Show appropriate success message
-      let storageMethod;
-      if (backendSuccess) {
-        storageMethod = "Google Sheets and localStorage backup";
+      if (emailResult.success) {
+        // ✅ Email sent successfully - don't show credentials on screen for security
+        setSuccess(`✅ Account created successfully! Your username and password have been sent to ${email} in separate emails. Check your inbox now!`);
+        setEmail("");
+        
+        // Don't show credentials on screen for security
+        setShowPasscode(false);
+        setGeneratedPasscode("");
+        setUsername("");
+        
       } else {
-        storageMethod = `localStorage only (${backendError || "backend unavailable"})`;
+        // ❌ Email failed - show credentials on screen as backup
+        console.log("❌ Email sending failed, showing credentials on screen");
+        setGeneratedPasscode(newPasscode);
+        setUsername(newUsername);
+        setShowPasscode(true);
+        
+        let storageMethod;
+        if (backendSuccess) {
+          storageMethod = "Google Sheets and localStorage backup";
+        } else {
+          storageMethod = `localStorage only (${backendError || "backend unavailable"})`;
+        }
+        
+        setSuccess(`✅ Account created and saved to ${storageMethod}. ⚠️ Email sending failed (${emailResult.error}), so please save the credentials shown below.`);
+        setEmail("");
       }
-      
-      setSuccess(`Registration successful! Saved to ${storageMethod}.`);
-      setEmail("");
 
       console.log("✅ Registration completed successfully");
 
@@ -294,6 +418,51 @@ export default function Login({ onLogin }) {
         return "⚪ Backend Status Unknown";
     }
   };
+
+  // Admin Panel Component for email testing
+  const AdminPanel = () => (
+    <div style={{
+      marginTop: "1rem",
+      padding: "1rem",
+      backgroundColor: "#f9f9f9",
+      borderRadius: "6px",
+      fontSize: "0.85rem"
+    }}>
+      <div style={{ fontWeight: "bold", marginBottom: "0.5rem" }}>
+        🔧 Admin Tools:
+      </div>
+      <button
+        onClick={testEmailConfiguration}
+        style={{
+          margin: "0.25rem",
+          padding: "0.5rem 1rem",
+          backgroundColor: "#2196f3",
+          color: "white",
+          border: "none",
+          borderRadius: "4px",
+          cursor: "pointer",
+          fontSize: "0.8rem"
+        }}
+      >
+        Test Email Config
+      </button>
+      <button
+        onClick={sendBulkCredentials}
+        style={{
+          margin: "0.25rem",
+          padding: "0.5rem 1rem",
+          backgroundColor: "#ff9800",
+          color: "white",
+          border: "none",
+          borderRadius: "4px",
+          cursor: "pointer",
+          fontSize: "0.8rem"
+        }}
+      >
+        Send Bulk Emails to All Users
+      </button>
+    </div>
+  );
 
   return (
     <div
@@ -521,6 +690,7 @@ export default function Login({ onLogin }) {
           }}>
             ⚠️ <strong>IMPORTANT:</strong> Save your username and passcode now! 
             <br/>You'll need them to login to your journal.
+            <br/><strong>Email sending failed - these credentials are shown as backup.</strong>
           </div>
 
           <button
@@ -642,6 +812,9 @@ export default function Login({ onLogin }) {
           )}
         </div>
       </div>
+
+      {/* NEW: Admin Panel for Email Testing */}
+      <AdminPanel />
     </div>
   );
 }
