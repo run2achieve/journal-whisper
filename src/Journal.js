@@ -71,7 +71,13 @@ export default function Journal({ user, onLogout }) {
   const isCacheValid = (dateKey) => {
     const timestamp = cacheTimestamps[dateKey];
     if (!timestamp) return false;
-    return Date.now() - timestamp < CACHE_EXPIRY_MS;
+    
+    // If we have cached data but it's empty, expire the cache faster (1 minute instead of 5)
+    const cachedData = entriesCache[dateKey];
+    const isEmptyResult = Array.isArray(cachedData) && cachedData.length === 0;
+    const expiryTime = isEmptyResult ? 60 * 1000 : CACHE_EXPIRY_MS; // 1 minute for empty, 5 minutes for data
+    
+    return Date.now() - timestamp < expiryTime;
   };
 
   const fetchEntriesForDate = async (dateToFetch, forceRefresh = false) => {
@@ -92,6 +98,8 @@ export default function Journal({ user, onLogout }) {
     
     console.log("7. Has cached data:", hasCachedData);
     console.log("8. Cache is valid:", cacheIsValid);
+    console.log("9. Cache data content:", hasCachedData);
+    console.log("10. Is empty result?", Array.isArray(hasCachedData) && hasCachedData.length === 0);
     
     if (!forceRefresh && hasCachedData && cacheIsValid) {
       console.log("✅ Using valid cache data");
@@ -475,6 +483,27 @@ export default function Journal({ user, onLogout }) {
           }}
         >
           📊 Log Current State
+        </button>
+        <button 
+          onClick={() => {
+            setEntriesCache({});
+            setCacheTimestamps({});
+            setEntriesForDate([]);
+            console.log("🗑️ Cache cleared!");
+            setSaveMessage("Cache cleared - try clicking a date again");
+            setShowToast(true);
+          }}
+          style={{
+            padding: "0.5rem 1rem",
+            backgroundColor: "#f44336",
+            color: "white",
+            border: "none",
+            borderRadius: "4px",
+            cursor: "pointer",
+            marginLeft: "0.5rem"
+          }}
+        >
+          🗑️ Clear Cache
         </button>
       </div>
     );
