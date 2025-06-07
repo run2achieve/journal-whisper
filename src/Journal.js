@@ -1413,7 +1413,7 @@ export default function Journal({ user, onLogout }) {
                 ) : (
                   <>
                     <span>📝</span>
-                    Summarize
+                    Summarise
                   </>
                 )}
               </button>

@@ -46,10 +46,11 @@ export default function Login({ onLogin }) {
   const [generatedPasscode, setGeneratedPasscode] = useState("");
   const [showPasscode, setShowPasscode] = useState(false);
   
-  // Dynamic users (loaded from localStorage only)
+  // Dynamic users (backup localStorage)
   const [dynamicUsers, setDynamicUsers] = useState({});
+  const [googleSheetsStatus, setGoogleSheetsStatus] = useState("unknown"); // "working", "failed", "unknown"
 
-  // Load registered users from localStorage on component mount
+  // Load registered users from localStorage on component mount (backup)
   useEffect(() => {
     const stored = localStorage.getItem('registeredUsers');
     if (stored) {
@@ -63,21 +64,19 @@ export default function Login({ onLogin }) {
     }
   }, []);
 
-  // Save registered users to localStorage
+  // Save registered users to localStorage (backup)
   const saveRegisteredUsers = (users) => {
     localStorage.setItem('registeredUsers', JSON.stringify(users));
     setDynamicUsers(users);
     console.log("💾 Saved users to localStorage:", users);
   };
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     
-    console.log("🔍 DEBUG: Attempting login with username:", username, "password:", password);
-    console.log("🔍 DEBUG: Hard-coded users:", USERS);
-    console.log("🔍 DEBUG: Dynamic users from localStorage:", dynamicUsers);
+    console.log("🔍 Attempting login with username:", username);
     
-    // Check hard-coded users first
+    // Step 1: Check hard-coded users first (fastest)
     if (USERS[username] && USERS[username] === password) {
       console.log("✅ Login successful with hard-coded user");
       setError("");
@@ -85,19 +84,52 @@ export default function Login({ onLogin }) {
       return;
     }
     
-    // Check localStorage registered users
-    if (dynamicUsers[username]) {
-      console.log("🔍 Found user in localStorage:", dynamicUsers[username]);
-      if (dynamicUsers[username].passcode === password) {
-        console.log("✅ Login successful with registered user");
-        setError("");
-        onLogin(username);
-        return;
+    // Step 2: Check localStorage registered users (fast backup)
+    if (dynamicUsers[username] && dynamicUsers[username].passcode === password) {
+      console.log("✅ Login successful with localStorage user");
+      setError("");
+      onLogin(username);
+      return;
+    }
+    
+    // Step 3: Check Google Sheets for registered users (if backend configured)
+    try {
+      console.log("🔍 Checking Google Sheets for user credentials...");
+      
+      const LOGIN_CHECK_URL =
+        window.location.hostname === "localhost"
+          ? "http://localhost:8090/checkUser"
+          : "https://journal-whisper.onrender.com/checkUser";
+
+      const response = await fetch(LOGIN_CHECK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: username,
+          passcode: password
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
+          console.log("✅ Login successful with Google Sheets user");
+          setGoogleSheetsStatus("working");
+          setError("");
+          onLogin(username);
+          return;
+        } else {
+          console.log("❌ Invalid credentials in Google Sheets");
+          setGoogleSheetsStatus("working");
+        }
       } else {
-        console.log("❌ Passcode mismatch. Expected:", dynamicUsers[username].passcode, "Got:", password);
+        console.log("⚠️ Google Sheets backend error:", response.status);
+        setGoogleSheetsStatus("failed");
       }
-    } else {
-      console.log("❌ User not found in localStorage");
+      
+    } catch (error) {
+      console.log("⚠️ Backend login check failed:", error.message);
+      setGoogleSheetsStatus("failed");
     }
     
     setError("Invalid username or password");
@@ -121,12 +153,12 @@ export default function Login({ onLogin }) {
       return;
     }
 
-    // Check if email already exists in dynamic users
+    // Check if email already exists in localStorage users
     const existingUser = Object.keys(dynamicUsers).find(user => 
       dynamicUsers[user].email === email
     );
     if (existingUser) {
-      setError("Email already registered");
+      setError("Email already registered in local storage");
       return;
     }
 
@@ -141,7 +173,60 @@ export default function Login({ onLogin }) {
 
       console.log("🎯 Generated credentials:", { username: newUsername, passcode: newPasscode });
 
-      // Save to localStorage (primary storage for now)
+      // Try to save to Google Sheets backend first (primary storage)
+      let backendSuccess = false;
+      let backendError = null;
+      
+      try {
+        const REGISTER_API_URL =
+          window.location.hostname === "localhost"
+            ? "http://localhost:8090/register"
+            : "https://journal-whisper.onrender.com/register";
+
+        console.log("📤 Sending registration to Google Sheets...");
+
+        const response = await fetch(REGISTER_API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: newUsername,
+            password: newPasscode,
+            email: email,
+            fullName: email,
+            registrationDate: new Date().toISOString(),
+          }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success) {
+            console.log("✅ User saved to Google Sheets successfully");
+            setGoogleSheetsStatus("working");
+            backendSuccess = true;
+          } else {
+            console.log("❌ Google Sheets registration failed:", result.error);
+            backendError = result.error;
+            setGoogleSheetsStatus("working");
+            
+            // Check for duplicate errors from backend
+            if (result.error.includes("already exists") || result.error.includes("already registered")) {
+              setError(result.error);
+              return;
+            }
+          }
+        } else {
+          const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+          console.log("❌ Backend registration failed with status:", response.status);
+          backendError = errorData.error || `Server error: ${response.status}`;
+          setGoogleSheetsStatus("failed");
+        }
+      } catch (backendError) {
+        console.log("⚠️ Backend not available for registration:", backendError.message);
+        setGoogleSheetsStatus("failed");
+        backendError = "Backend service unavailable";
+      }
+
+      // Always save to localStorage as backup (even if backend succeeded)
       const updatedUsers = {
         ...dynamicUsers,
         [newUsername]: {
@@ -153,12 +238,20 @@ export default function Login({ onLogin }) {
       
       saveRegisteredUsers(updatedUsers);
 
-      // Update state for immediate use
+      // Update state for display
       setGeneratedPasscode(newPasscode);
       setUsername(newUsername);
       setShowPasscode(true);
       
-      setSuccess(`Registration successful! Your username is "${newUsername}". Please save your passcode securely.`);
+      // Show appropriate success message
+      let storageMethod;
+      if (backendSuccess) {
+        storageMethod = "Google Sheets and localStorage backup";
+      } else {
+        storageMethod = `localStorage only (${backendError || "backend unavailable"})`;
+      }
+      
+      setSuccess(`Registration successful! Saved to ${storageMethod}.`);
       setEmail("");
 
       console.log("✅ Registration completed successfully");
@@ -190,6 +283,18 @@ export default function Login({ onLogin }) {
     });
   };
 
+  // Get status indicator for Google Sheets
+  const getBackendStatusIndicator = () => {
+    switch(googleSheetsStatus) {
+      case "working":
+        return "🟢 Google Sheets Connected";
+      case "failed":
+        return "🟡 Using Local Storage Only";
+      default:
+        return "⚪ Backend Status Unknown";
+    }
+  };
+
   return (
     <div
       style={{
@@ -205,6 +310,21 @@ export default function Login({ onLogin }) {
       <h2 style={{ textAlign: "center", marginBottom: "2rem", color: "#333" }}>
         {mode === "login" ? "🔐 Journal Login" : "📝 Create New Account"}
       </h2>
+
+      {/* Backend Status Indicator */}
+      {googleSheetsStatus !== "unknown" && (
+        <div style={{
+          textAlign: "center",
+          fontSize: "0.8rem",
+          marginBottom: "1rem",
+          padding: "0.5rem",
+          backgroundColor: googleSheetsStatus === "working" ? "#e8f5e8" : "#fff3cd",
+          borderRadius: "4px",
+          border: `1px solid ${googleSheetsStatus === "working" ? "#c8e6c9" : "#ffeaa7"}`
+        }}>
+          {getBackendStatusIndicator()}
+        </div>
+      )}
 
       {mode === "login" ? (
         // LOGIN FORM
@@ -477,7 +597,7 @@ export default function Login({ onLogin }) {
         </div>
       )}
 
-      {/* Debug Info */}
+      {/* Enhanced Debug Info */}
       <div style={{
         marginTop: "2rem",
         padding: "1rem",
@@ -487,13 +607,38 @@ export default function Login({ onLogin }) {
         color: "#666"
       }}>
         <div style={{ fontWeight: "bold", marginBottom: "0.5rem" }}>
-          🔍 Debug Info:
+          🔍 System Status:
         </div>
         <div>
           Hard-coded users: {Object.keys(USERS).length}<br/>
-          Registered users: {Object.keys(dynamicUsers).length}<br/>
+          Local registered users: {Object.keys(dynamicUsers).length}<br/>
+          Backend status: {getBackendStatusIndicator()}<br/>
           {Object.keys(dynamicUsers).length > 0 && (
             <div>Last registered: {Object.keys(dynamicUsers)[Object.keys(dynamicUsers).length - 1]}</div>
+          )}
+        </div>
+      </div>
+
+      {/* Login Method Info */}
+      <div style={{
+        marginTop: "1rem",
+        padding: "1rem",
+        backgroundColor: "#f5f5f5",
+        borderRadius: "6px",
+        fontSize: "0.85rem",
+        color: "#666"
+      }}>
+        <div style={{ fontWeight: "bold", marginBottom: "0.5rem" }}>
+          🔐 Login Methods:
+        </div>
+        <div>
+          1. <strong>Hard-coded users</strong> (user1-user20)<br/>
+          2. <strong>Local registered users</strong> (this browser only)<br/>
+          3. <strong>Google Sheets users</strong> (accessible anywhere)
+          {googleSheetsStatus === "failed" && (
+            <div style={{ color: "#d32f2f", marginTop: "0.5rem" }}>
+              ⚠️ Google Sheets backend not available - using local storage only
+            </div>
           )}
         </div>
       </div>
