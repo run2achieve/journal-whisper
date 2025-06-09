@@ -10,14 +10,24 @@ const BackgroundCat = () => {
 
   // Cat activities with their durations (in milliseconds)
   const activities = [
-    { name: 'sit', duration: 3000, emoji: '🧶', face: '🐱' },
-    { name: 'walk', duration: 4000, emoji: '🐾', face: '🐱' },
+    { name: 'sit', duration: 3000, emoji: '🏠', face: '🐱' },
+    { name: 'walk', duration: 4000, emoji: '🚶‍♀️', face: '🐱' },
     { name: 'sleep', duration: 5000, emoji: '💤', face: '😴' },
-    { name: 'play', duration: 2000, emoji: '🎾', face: '😸' },
-    { name: 'stretch', duration: 2500, emoji: '🤸', face: '😺' },
-    { name: 'groom', duration: 3500, emoji: '👅', face: '😌' },
-    { name: 'hunt', duration: 3000, emoji: '👀', face: '😼' },
-    { name: 'curious', duration: 2000, emoji: '❓', face: '🤔' }
+    { name: 'play', duration: 2000, emoji: '🎉', face: '😸' },
+    { name: 'stretch', duration: 2500, emoji: '🧘‍♀️', face: '😺' },
+    { name: 'groom', duration: 3500, emoji: '🛁', face: '😌' },
+    { name: 'hunt', duration: 3000, emoji: '🦋', face: '😼' },
+    { name: 'curious', duration: 2000, emoji: '🔍', face: '🤔' },
+    { name: 'eating', duration: 2500, emoji: '🍽️', face: '😋' },
+    { name: 'dancing', duration: 2000, emoji: '💃', face: '😄' },
+    { name: 'thinking', duration: 3500, emoji: '💭', face: '🤯' },
+    { name: 'happy', duration: 2000, emoji: '🎈', face: '😻' },
+    { name: 'sleepy', duration: 4000, emoji: '🌙', face: '😪' },
+    { name: 'excited', duration: 1500, emoji: '⭐', face: '🤩' },
+    { name: 'lazy', duration: 4500, emoji: '🛋️', face: '😑' },
+    { name: 'magical', duration: 2500, emoji: '✨', face: '😇' },
+    { name: 'party', duration: 2000, emoji: '🎊', face: '🥳' },
+    { name: 'love', duration: 3000, emoji: '💕', face: '😍' }
   ];
 
   // Initialize position on mount
@@ -168,7 +178,7 @@ const BackgroundCat = () => {
     width: '60px',
     height: '60px',
     pointerEvents: 'none',
-    zIndex: -1,
+    zIndex: 1000,
     transition: 'transform 0.3s ease',
     userSelect: 'none',
     ...getActivityAnimation()
